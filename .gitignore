@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.local
+data/
+*.csv
+dashboard/.next/
+dashboard/node_modules/
+seeds/verify_report.json
+dashboard/.env.local
+dashboard/.vercel/
+retry.log

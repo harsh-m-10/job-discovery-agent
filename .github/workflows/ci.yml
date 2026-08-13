@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Lifecycle and normalization tests
+        run: python tests/test_lifecycle.py
+
+      - name: Prefilter tests
+        run: python tests/test_prefilter.py
+
+      - name: Scoring transport tests
+        run: python tests/test_llm.py
+
+      - name: Layer boundary and banned-platform check
+        run: python scripts/check_boundaries.py
+
+      - name: Ingestion smoke test (live boards, no database)
+        run: python -m ingest.run --dry-run

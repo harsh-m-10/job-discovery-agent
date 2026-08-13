@@ -1,0 +1,49 @@
+# Seed candidate boards. UNVERIFIED until scripts/verify_boards.py prunes them.
+# ats: greenhouse | lever | ashby
+# priority: 1 = every run, 2 = hourly, 3 = daily
+
+# --- Observability / AIOps: strongest domain fit ---
+- {name: Grafana Labs,     ats: greenhouse, token: grafanalabs,   category: observability, priority: 1}
+- {name: Chronosphere,     ats: ashby,      token: chronospherejobs, category: observability, priority: 1}
+- {name: Datadog,          ats: greenhouse, token: datadog,       category: observability, priority: 1}
+- {name: New Relic,        ats: greenhouse, token: newrelic,      category: observability, priority: 2}
+- {name: Sumo Logic,       ats: greenhouse, token: sumologic,     category: observability, priority: 2}
+- {name: Elastic,          ats: greenhouse, token: elastic,       category: observability, priority: 2}
+
+# --- Data / infra platforms ---
+- {name: Databricks,       ats: greenhouse, token: databricks,    category: product, priority: 1}
+- {name: Confluent,        ats: ashby, token: confluent,     category: product, priority: 1}
+- {name: MongoDB,          ats: greenhouse, token: mongodb,       category: product, priority: 2}
+- {name: Snowflake,        ats: ashby, token: snowflake, category: product, priority: 2}
+- {name: Rubrik,           ats: greenhouse, token: rubrik,        category: product, priority: 1}
+- {name: Harness,          ats: greenhouse, token: harnessinc,       category: product, priority: 1}
+- {name: HashiCorp,        ats: greenhouse, token: hashicorp,     category: product, priority: 2}
+- {name: Cockroach Labs,   ats: greenhouse, token: cockroachlabs, category: product, priority: 3}
+- {name: Redis,            ats: ashby, token: redis,     category: product, priority: 3}
+
+# --- Global product cos with Bengaluru engineering ---
+- {name: Stripe,           ats: greenhouse, token: stripe,        category: product, priority: 1}
+- {name: Twilio,           ats: greenhouse, token: twilio,        category: product, priority: 2}
+- {name: Cloudflare,       ats: greenhouse, token: cloudflare,    category: product, priority: 2}
+- {name: Atlassian,        ats: lever,      token: atlassian,     category: product, priority: 2}
+- {name: Wiz,              ats: greenhouse, token: wizinc,           category: product, priority: 3}
+- {name: Postman,          ats: greenhouse, token: postman,       category: product, priority: 1}
+- {name: BrowserStack,     ats: lever,      token: browserstack,  category: product, priority: 1}
+
+# --- India product companies ---
+- {name: Razorpay,         ats: greenhouse, token: razorpaysoftwareprivatelimited, category: product, priority: 1}
+- {name: CRED,             ats: lever,      token: cred,          category: product, priority: 1}
+- {name: Groww,            ats: greenhouse,      token: groww,         category: product, priority: 1}
+- {name: Meesho,           ats: lever, token: meesho,        category: product, priority: 1}
+- {name: Zeta,             ats: lever,      token: zeta,          category: product, priority: 2}
+- {name: Hasura,           ats: lever,      token: hasura,        category: product, priority: 2}
+- {name: Chargebee,        ats: lever,      token: chargebee,     category: product, priority: 2}
+- {name: Whatfix,          ats: lever,      token: whatfix,       category: product, priority: 2}
+- {name: Darwinbox,        ats: lever,      token: darwinbox,     category: product, priority: 3}
+- {name: Sprinklr,         ats: greenhouse, token: sprinklr,      category: product, priority: 3}
+- {name: InMobi,           ats: greenhouse,      token: inmobi,        category: product, priority: 3}
+- {name: Dream11,          ats: lever,      token: dreamsports,   category: product, priority: 3}
+- {name: Navi,             ats: ashby,      token: navi,          category: product, priority: 3}
+- {name: Slice,            ats: greenhouse,      token: slice,         category: product, priority: 3}
+- {name: M2P Fintech,      ats: lever,      token: m2pfintech,    category: product, priority: 3}
+- {name: Freshworks,       ats: lever, token: freshworks,    category: product, priority: 2}

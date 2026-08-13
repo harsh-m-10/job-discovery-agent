@@ -1,0 +1,25 @@
+ping_threshold: 6.5
+max_pings_per_day: 40
+poll_interval_minutes: 15
+# Groq's free tier caps tokens-per-minute per model (12,000 on
+# llama-3.3-70b-versatile) and counts requested output against it. The spec's
+# batch of 8 at 6,000 chars needs roughly 15,000 and is rejected outright, so
+# these are sized to the ceiling that actually exists. Raise both if the key
+# is ever upgraded to a paid tier.
+llm_batch_size: 3
+max_experience_years: 4
+description_char_limit: 2000
+
+# Layer 1 location filter. A job is kept if its location string matches any of
+# these (case-insensitive substring), or if the string is empty/unknown.
+location_keywords:
+  - bengaluru
+  - bangalore
+  - karnataka
+  - india
+  - remote
+
+# Board health
+max_consecutive_failures: 5
+fetch_timeout_seconds: 20
+fetch_concurrency: 8

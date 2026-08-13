@@ -1,0 +1,81 @@
+# seeds/companies_batch2.yaml
+#
+# UNVERIFIED — same caveat as batch 1. Run scripts/verify_boards.py and
+# scripts/find_token.py over this before adding anything to the companies table.
+# Batch 1 had a ~60% miss rate; assume similar here.
+#
+# Selection logic: batch 1 skewed toward US-HQ companies whose India offices
+# hire senior + GTM. This batch targets where 0-3 YOE India reqs actually
+# concentrate — India-HQ product companies and India-HQ AI/observability firms.
+
+# ---------------------------------------------------------------------------
+# TIER A — India observability / AIOps / devtools
+# Strongest possible fit: the operator's RCA agent is these companies' core
+# product domain, and they are small enough to lack rigid experience filters.
+# Prioritise resolving these twelve above everything else in this file.
+# ---------------------------------------------------------------------------
+- {name: SigNoz,          ats: ashby,      token: signoz,        category: observability, priority: 1}
+- {name: Last9,           ats: lever,      token: last9,         category: observability, priority: 1}
+- {name: Middleware,      ats: ashby,      token: middleware,    category: observability, priority: 1}
+- {name: Atlan,           ats: ashby,      token: atlan,         category: product,       priority: 1}
+- {name: Appsmith,        ats: lever,      token: appsmith,      category: product,       priority: 2}
+- {name: Devtron,         ats: lever,      token: devtron,       category: product,       priority: 2}
+- {name: Facets.cloud,    ats: lever,      token: facets,        category: product,       priority: 2}
+
+# ---------------------------------------------------------------------------
+# TIER B — India AI / ML product companies
+# Match the operator's LLM and ML stack directly.
+# ---------------------------------------------------------------------------
+- {name: Sarvam AI,       ats: ashby,      token: sarvam,      category: product, priority: 1}
+- {name: Observe.AI,      ats: greenhouse,      token: observeai,     category: product, priority: 1}
+- {name: Yellow.ai,       ats: lever,      token: yellowai,      category: product, priority: 1}
+- {name: Uniphore,        ats: greenhouse, token: uniphore,      category: product, priority: 2}
+- {name: Level AI,        ats: lever,      token: levelai,       category: product, priority: 2}
+- {name: Haptik,          ats: lever,      token: haptik,        category: product, priority: 2}
+- {name: Eightfold AI,    ats: greenhouse, token: eightfold,     category: product, priority: 2}
+- {name: MoEngage,        ats: lever,      token: moengage,      category: product, priority: 2}
+- {name: CleverTap,       ats: lever,      token: clevertap,     category: product, priority: 2}
+- {name: Fractal,         ats: greenhouse, token: fractalanalytics, category: services, priority: 3}
+
+# ---------------------------------------------------------------------------
+# TIER C — India fintech / consumer product
+# Highest raw volume of 0-3 YOE backend reqs in the Indian market.
+# ---------------------------------------------------------------------------
+- {name: Juspay,          ats: lever,      token: juspay,        category: product, priority: 1}
+- {name: Setu,            ats: lever,      token: setu,          category: product, priority: 2}
+- {name: Fi Money,        ats: lever,      token: epifi,         category: product, priority: 1}
+- {name: Jupiter,         ats: lever,      token: jupitermoney,  category: product, priority: 2}
+- {name: Pine Labs,       ats: lever,      token: pinelabs,      category: product, priority: 2}
+- {name: Perfios,         ats: lever,      token: perfios,       category: product, priority: 3}
+- {name: Zepto,           ats: lever,      token: zepto,         category: product, priority: 1}
+- {name: Rapido,          ats: lever,      token: rapido,        category: product, priority: 2}
+- {name: Porter,          ats: lever,      token: porter,        category: product, priority: 2}
+- {name: Urban Company,   ats: lever,      token: urbancompany,  category: product, priority: 2}
+- {name: ShareChat,       ats: lever,      token: sharechat,     category: product, priority: 2}
+- {name: Lenskart,        ats: lever,      token: lenskart,      category: product, priority: 3}
+- {name: Zetwerk,         ats: lever,      token: zetwerk,       category: product, priority: 3}
+- {name: Delhivery,       ats: lever,      token: delhivery,     category: product, priority: 3}
+
+# ---------------------------------------------------------------------------
+# TIER D — India SaaS
+# ---------------------------------------------------------------------------
+- {name: Rocketlane,      ats: lever,      token: rocketlane,    category: product, priority: 2}
+- {name: Everstage,       ats: lever,      token: everstage,     category: product, priority: 2}
+- {name: Zluri,           ats: lever,      token: zluri,         category: product, priority: 2}
+- {name: Wingify,         ats: lever,      token: wingify,       category: product, priority: 3}
+- {name: Innovaccer,      ats: greenhouse, token: innovaccer,    category: product, priority: 3}
+- {name: HighRadius,      ats: greenhouse, token: highradius,    category: product, priority: 3}
+- {name: Icertis,         ats: greenhouse, token: icertis,       category: product, priority: 3}
+- {name: Gupshup,         ats: lever,      token: gupshup,       category: product, priority: 3}
+- {name: Exotel,          ats: lever,      token: exotel,        category: product, priority: 3}
+- {name: Plivo,           ats: lever,      token: plivo,         category: product, priority: 3}
+
+# ---------------------------------------------------------------------------
+# NOT ON THESE ATS — do not add, listed so nobody wastes time probing them
+# ---------------------------------------------------------------------------
+# Flipkart, PhonePe, Swiggy, Zomato, Paytm, Myntra, Zoho, Zerodha
+#   -> proprietary or Darwinbox-hosted career portals
+# Cisco, Nokia, Ericsson, Adobe, Walmart, Target, JPMC, Nutanix, Zscaler
+#   -> Workday. These are the large GCCs and they are a meaningful share of
+#      India 0-3 YOE hiring. If weekly flow is still thin after this batch,
+#      the Workday adapter (spec Phase 6) is the fix — not more prefilter work.

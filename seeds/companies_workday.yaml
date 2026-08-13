@@ -1,0 +1,22 @@
+# seeds/companies_workday.yaml
+#
+# Workday tokens are compound: "tenant|wdHost|site". All three parts are
+# per-tenant and published nowhere, so each was resolved with
+# scripts/find_workday.py and its identity confirmed from a sample posting.
+#
+# Discovery notes, so nobody repeats the dead ends:
+#   * 404 from the CXS endpoint = tenant real, site name wrong.
+#     422 = tenant not on that wd host. A nonsense tenant returns 422 on every
+#     host, so 422 is not evidence of anything.
+#   * A non-browser User-Agent is rejected outright by the bot filter.
+#   * Site names are case-insensitive (targetCareers == TargetCareers).
+#
+# Unresolved from the requested seed list:
+#   Walmart   — tenant exists on wd5, site name not guessable. Needs the manual
+#               lookup: open the careers page and read it out of the URL.
+#   JPMorgan, Nutanix, Zscaler, Arista, Juniper — no Workday tenant found under
+#               any slug tried. They are on another ATS or a bespoke portal.
+
+- {name: Cisco,  ats: workday, token: "cisco|wd5|cisco_Careers",   category: gcc, priority: 2}
+- {name: Target, ats: workday, token: "target|wd5|targetCareers",  category: gcc, priority: 2}
+- {name: Adobe,  ats: workday, token: "adobe|wd5|external_experienced", category: gcc, priority: 2}
