@@ -27,6 +27,9 @@ jobs:
       - name: Scoring transport tests
         run: python tests/test_llm.py
 
+      - name: Referral matching tests
+        run: python tests/test_referral.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 
