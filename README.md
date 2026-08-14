@@ -89,12 +89,28 @@ Scoring runs against three vendors behind one interface
 (`score/providers.py`), chosen by `config/settings.yaml:llm_providers` and tried
 in `priority` order with automatic failover on 429 / 413 / 5xx:
 
-| Priority | Provider | Model | Key | Status |
+| # | Provider | Model | Key | Measured on a real 8,040-token payload |
 |---|---|---|---|---|
-| 1 | Google AI Studio | `gemini-flash-lite-latest` | `GOOGLE_API_KEY` | **active** — 2.6s on a 5.4k-token payload |
-| 2 | Google AI Studio | `gemini-3-flash-preview` | `GOOGLE_API_KEY` | active fallback, ~10s |
-| 3 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | **disabled** — account shared with another project |
-| 4 | Cerebras | `gpt-oss-120b` | `CEREBRAS_API_KEY` | **402 payment required** on every model |
+| 1 | Google AI Studio | `gemini-flash-lite-latest` | `GOOGLE_API_KEY` | **3.7s** |
+| 2 | Mistral | `mistral-small-latest` | `MISTRAL_API_KEY` | **4.5s** |
+| 3 | Google AI Studio | `gemini-3-flash-preview` | `GOOGLE_API_KEY` | 10.7s |
+| 4 | Cloudflare Workers AI | `@cf/openai/gpt-oss-120b` | `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | 13.3s |
+| 5 | OpenRouter | `nvidia/nemotron-3-super-120b-a12b:free` | `OPENROUTER_API_KEY` | 15.0s |
+| 6 | NVIDIA NIM | `openai/gpt-oss-120b` | `NVIDIA_API_KEY` | 20.3s |
+| 7 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | disabled — account shared |
+| 8 | Cerebras | `gpt-oss-120b` | `CEREBRAS_API_KEY` | 402 payment required |
+
+Rejected during that test, and why — every one of these looked fine on a toy
+request:
+
+| candidate | outcome |
+|---|---|
+| GitHub Models (any model) | HTTP 410 `github_models_retirement_brownout` — **being retired** |
+| `openrouter/google/gemma-4-31b:free` | 429 from the upstream provider |
+| `openrouter/nvidia/nemotron-3-nano-30b` | 200 but unparseable JSON |
+| `openrouter/openai/gpt-oss-20b` | worked, but **102s** — too slow to sit in the chain |
+| `nvidia/meta/llama-3.3-70b-instruct` | read timeout at 150s |
+| `mistral/open-mistral-nemo` | 200 but unparseable JSON |
 
 Model choice was measured, not assumed. On a real scoring payload
 `gemini-flash-latest` read-timed-out at 76s with persistent 503s, and

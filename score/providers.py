@@ -183,7 +183,26 @@ class ChatProvider:
         return self.cfg.name
 
     def available(self) -> bool:
-        return self.cfg.enabled and bool(os.environ.get(self.cfg.api_key_env))
+        if not (self.cfg.enabled and os.environ.get(self.cfg.api_key_env)):
+            return False
+        # A provider whose base_url needs an env var it does not have is not
+        # available either, however valid its API key is.
+        return all(os.environ.get(n)
+                   for n in re.findall(r"\$\{(\w+)\}", self.cfg.base_url))
+
+    def _base_url(self) -> str:
+        """Expand ${VAR} in base_url.
+
+        Cloudflare puts the account id in the path rather than a header, and an
+        account id does not belong in a committed config file.
+        """
+        url = self.cfg.base_url
+        for name in re.findall(r"\$\{(\w+)\}", url):
+            value = os.environ.get(name)
+            if not value:
+                raise NotConfigured(f"{name} is not set (needed for {self.name} base_url)")
+            url = url.replace(f"${{{name}}}", value)
+        return url
 
     def complete(self, system: str, user: str, max_output: int) -> str:
         key = os.environ.get(self.cfg.api_key_env)
@@ -205,7 +224,7 @@ class ChatProvider:
 
         try:
             resp = requests.post(
-                f"{self.cfg.base_url.rstrip('/')}/chat/completions",
+                f"{self._base_url().rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {key}",
                          "Content-Type": "application/json",
                          **self.cfg.extra_headers},

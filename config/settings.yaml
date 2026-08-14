@@ -42,7 +42,7 @@ llm_providers:
   # Same vendor, different model. Slower but independent of whatever makes the
   # flash-lite endpoint wobble, so it is worth a try before leaving Google.
   - name: google-flash3
-    priority: 2
+    priority: 3
     model: gemini-3-flash-preview
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     api_key_env: GOOGLE_API_KEY
@@ -60,7 +60,7 @@ llm_providers:
   # so the two compete for one budget. Kept configured, not deleted — flip
   # `enabled` back to true if the other project ever moves off it.
   - name: groq
-    priority: 3
+    priority: 7
     model: llama-3.3-70b-versatile
     base_url: https://api.groq.com/openai/v1
     api_key_env: GROQ_API_KEY
@@ -78,7 +78,7 @@ llm_providers:
   # over. Only 5 requests/minute against 30k tokens/minute means ~6k tokens per
   # request, which is what batch_size and max_chars are sized to.
   - name: cerebras
-    priority: 4
+    priority: 8
     model: gpt-oss-120b
     base_url: https://api.cerebras.ai/v1
     api_key_env: CEREBRAS_API_KEY
@@ -89,6 +89,71 @@ llm_providers:
     max_output_tokens_per_job: 320
     json_mode: true
     enabled: true
+
+  # --- added after measuring every candidate against a real 8,040-token
+  # payload (5 jobs). Ordered by measured latency, not by vendor reputation.
+  # Rejected in that test: openrouter gemma-4-31b (429), openrouter
+  # nemotron-nano-30b and open-mistral-nemo (returned unparseable JSON),
+  # nvidia meta/llama-3.3-70b (read timeout at 150s), openrouter gpt-oss-20b
+  # (worked but took 102s, far too slow to sit in the chain).
+
+  - name: mistral
+    priority: 2
+    model: mistral-small-latest        # 4.5s, 5/5 — fastest non-Google option
+    base_url: https://api.mistral.ai/v1
+    api_key_env: MISTRAL_API_KEY
+    rpm: 30
+    tpm: 400000
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 90
+
+  - name: cloudflare
+    priority: 4
+    model: "@cf/openai/gpt-oss-120b"   # 13.3s, 5/5
+    # Cloudflare carries the account id in the path; ${VAR} is expanded from the
+    # environment so it stays out of the committed config.
+    base_url: https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/v1
+    api_key_env: CLOUDFLARE_API_KEY
+    rpm: 30
+    tpm: 0                             # free tier is metered in "neurons", not tokens
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  - name: openrouter
+    priority: 5
+    model: nvidia/nemotron-3-super-120b-a12b:free   # 15.0s, 5/5
+    base_url: https://openrouter.ai/api/v1
+    api_key_env: OPENROUTER_API_KEY
+    rpm: 15                            # free models are rate-limited hard
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  - name: nvidia
+    priority: 6
+    model: openai/gpt-oss-120b         # 20.3s, 5/5
+    base_url: https://integrate.api.nvidia.com/v1
+    api_key_env: NVIDIA_API_KEY
+    rpm: 30
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
 
 # Fallbacks used when a provider entry omits them, and by --batch-size/--char-limit
 llm_batch_size: 4
