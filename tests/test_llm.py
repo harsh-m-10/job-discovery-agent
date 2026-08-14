@@ -103,15 +103,29 @@ def test_provider_is_unavailable_without_a_key():
     assert ChatProvider(cfg).available() is False
 
 
-def test_real_settings_define_three_providers():
+def test_real_settings_define_a_usable_chain():
+    """Asserts shape, not an exact roster — providers get added and retired."""
     from score.llm import load_settings
     providers = build_providers(load_settings())
     names = [p.name for p in providers]
-    assert names == ["google", "groq", "cerebras"], names
+
+    assert len(providers) >= 2, f"no failover headroom: {names}"
+    assert names[0].startswith("google"), f"google should lead, got {names}"
+    assert names == sorted(names, key=lambda n: [p.cfg.priority
+                                                 for p in providers
+                                                 if p.name == n][0])
     # No hardcoded limits: every provider must carry its own rate config.
     for p in providers:
-        assert p.cfg.batch_size > 0 and p.cfg.max_chars > 0
-        assert p.cfg.api_key_env.endswith("_API_KEY")
+        assert p.cfg.batch_size > 0 and p.cfg.max_chars > 0, p.name
+        assert p.cfg.api_key_env.endswith("_API_KEY"), p.name
+        assert p.cfg.model, p.name
+
+
+def test_groq_is_disabled():
+    """The Groq account is shared with another project; it must stay off."""
+    from score.llm import load_settings
+    groq = [p for p in build_providers(load_settings()) if p.name == "groq"]
+    assert groq and groq[0].cfg.enabled is False
 
 
 # --- scoring output coercion --------------------------------------------
