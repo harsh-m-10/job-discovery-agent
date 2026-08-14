@@ -195,6 +195,12 @@ def normalize_entry(entry: dict, model: str, provider: str = "") -> dict | None:
         "matched_skills": string_list(entry.get("matched_skills")),
         "gap_skills": string_list(entry.get("gap_skills")),
         "reasoning": str(entry.get("reasoning") or "").strip()[:600],
+        # Explicitly cleared. PostgREST updates only the columns present in the
+        # payload, so omitting this left a stale "scoring_failed:..." marker on
+        # a row that had just been scored successfully — which made the
+        # dashboard show a permanent error banner and made --retry-failed
+        # re-score jobs that were already fine.
+        "reject_reason": None,
         "model": model,
         "provider": provider,
     }

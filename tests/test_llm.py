@@ -136,6 +136,13 @@ def test_verdict_is_recomputed_from_score():
     assert normalize_entry({"job_id": 1, "fit_score": 8.4}, "m", "p")["verdict"] == "strong"
 
 
+def test_success_clears_any_prior_reject_reason():
+    # PostgREST updates only the columns in the payload. Omitting reject_reason
+    # left a stale scoring_failed marker on a freshly scored row.
+    row = normalize_entry({"job_id": 1, "fit_score": 9.0}, "m", "google")
+    assert "reject_reason" in row and row["reject_reason"] is None
+
+
 def test_provider_is_recorded_on_the_row():
     row = normalize_entry({"job_id": 1, "fit_score": 7.0}, "gemini-2.0-flash", "google")
     assert row["provider"] == "google" and row["model"] == "gemini-2.0-flash"
