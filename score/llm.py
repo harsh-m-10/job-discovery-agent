@@ -23,9 +23,9 @@ from pathlib import Path
 
 import yaml
 
-from .providers import (ChatProvider, NotConfigured, ProviderError,
-                        QuotaExhausted, RateLimited, RequestTooLarge,
-                        build_providers)
+from .providers import (ChatProvider, NotConfigured, PaymentRequired,
+                        ProviderError, QuotaExhausted, RateLimited,
+                        RequestTooLarge, ServerError, build_providers)
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT_FILE = ROOT / "score" / "prompts" / "scoring.txt"
@@ -109,7 +109,14 @@ def parse_scores(text: str) -> list[dict]:
         match = re.search(r"\{.*\}", cleaned, re.S)
         if not match:
             raise ScoringError(f"unparseable response: {cleaned[:200]}") from exc
-        payload = json.loads(match.group(0))
+        try:
+            payload = json.loads(match.group(0))
+        except json.JSONDecodeError as inner:
+            # Usually a reply truncated by max_tokens mid-object. Surfacing it
+            # as ScoringError lets _attempt retry instead of killing the run.
+            raise ScoringError(
+                f"truncated or malformed JSON ({inner}): {cleaned[:160]}"
+            ) from inner
 
     if isinstance(payload, list):
         return payload
@@ -227,6 +234,14 @@ def _attempt(provider: ChatProvider, jobs: list[dict], system: str,
                 time.sleep(delay)
                 continue
             raise
+        except ServerError as exc:
+            last_error = str(exc)
+            if attempt < attempts - 1:
+                delay = min(4.0 * (2 ** attempt), 45.0)
+                print(f"    [{provider.name}] {str(exc)[:60]} — retrying in {delay:.0f}s")
+                time.sleep(delay)
+                continue
+            raise
         except ScoringError as exc:
             last_error = str(exc)
             if attempt < attempts - 1:
@@ -276,6 +291,10 @@ def score_batch(jobs: list[dict], providers: list[ChatProvider], *,
         except QuotaExhausted as exc:
             failures.append(f"{provider.name}: quota exhausted")
             print(f"    [{provider.name}] quota exhausted — falling through")
+            continue
+        except PaymentRequired as exc:
+            failures.append(f"{provider.name}: payment required (no free quota)")
+            print(f"    [{provider.name}] 402 payment required — falling through")
             continue
         except (RateLimited, RequestTooLarge, NotConfigured, ProviderError) as exc:
             failures.append(f"{provider.name}: {str(exc)[:90]}")

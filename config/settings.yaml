@@ -18,21 +18,49 @@ max_experience_years: 4
 # A fallback with a tighter ceiling re-chunks automatically.
 # ---------------------------------------------------------------------------
 llm_providers:
+  # Model choice measured, not assumed, on a real 5.4k-token scoring payload:
+  #   gemini-flash-lite-latest   200 in  2.6s   <- chosen
+  #   gemini-3-flash-preview     200 in 10.5s   <- second Google attempt
+  #   gemini-flash-latest        read timeout at 76s (persistent 503s)
+  #   gemini-2.0/2.5-flash       404 "no longer available" on this key
   - name: google
     priority: 1
-    model: gemini-2.0-flash
+    model: gemini-flash-lite-latest
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     api_key_env: GOOGLE_API_KEY
-    rpm: 15                 # AI Studio free tier, per-minute requests
-    tpm: 1000000
-    batch_size: 8
-    max_chars: 6000
-    max_output_tokens_per_job: 320
+    rpm: 10                 # AI Studio free tier; conservative
+    tpm: 250000
+    # 5 not 8: a truncated reply costs the whole batch a retry, and Gemini
+    # needed more output room than 320/job to close its JSON at batch 8.
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
     json_mode: true
     enabled: true
+    timeout: 90
 
-  - name: groq
+  # Same vendor, different model. Slower but independent of whatever makes the
+  # flash-lite endpoint wobble, so it is worth a try before leaving Google.
+  - name: google-flash3
     priority: 2
+    model: gemini-3-flash-preview
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key_env: GOOGLE_API_KEY
+    rpm: 10
+    tpm: 250000
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  # DISABLED at the operator's request: this Groq account is shared with a
+  # separate video-generation project, and Groq's free limits are per account,
+  # so the two compete for one budget. Kept configured, not deleted — flip
+  # `enabled` back to true if the other project ever moves off it.
+  - name: groq
+    priority: 3
     model: llama-3.3-70b-versatile
     base_url: https://api.groq.com/openai/v1
     api_key_env: GROQ_API_KEY
@@ -42,17 +70,22 @@ llm_providers:
     max_chars: 2000
     max_output_tokens_per_job: 320
     json_mode: true
-    enabled: true
+    enabled: false
 
+  # NOTE: this account currently answers 402 payment_required on every model,
+  # including the "Preview" ones. The limits below are the published figures and
+  # will apply once billing is enabled; until then the provider simply fails
+  # over. Only 5 requests/minute against 30k tokens/minute means ~6k tokens per
+  # request, which is what batch_size and max_chars are sized to.
   - name: cerebras
-    priority: 3
-    model: llama-3.3-70b
+    priority: 4
+    model: gpt-oss-120b
     base_url: https://api.cerebras.ai/v1
     api_key_env: CEREBRAS_API_KEY
-    rpm: 30
-    tpm: 60000
-    batch_size: 6
-    max_chars: 4000
+    rpm: 5
+    tpm: 30000
+    batch_size: 4
+    max_chars: 2000
     max_output_tokens_per_job: 320
     json_mode: true
     enabled: true

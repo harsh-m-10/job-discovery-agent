@@ -89,11 +89,18 @@ Scoring runs against three vendors behind one interface
 (`score/providers.py`), chosen by `config/settings.yaml:llm_providers` and tried
 in `priority` order with automatic failover on 429 / 413 / 5xx:
 
-| Priority | Provider | Model | Key | Notes |
+| Priority | Provider | Model | Key | Status |
 |---|---|---|---|---|
-| 1 | Google AI Studio | `gemini-2.0-flash` | `GOOGLE_API_KEY` | largest free allowance |
-| 2 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | 12k TPM, 100k TPD |
-| 3 | Cerebras | `llama-3.3-70b` | `CEREBRAS_API_KEY` | third fallback |
+| 1 | Google AI Studio | `gemini-flash-lite-latest` | `GOOGLE_API_KEY` | **active** — 2.6s on a 5.4k-token payload |
+| 2 | Google AI Studio | `gemini-3-flash-preview` | `GOOGLE_API_KEY` | active fallback, ~10s |
+| 3 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | **disabled** — account shared with another project |
+| 4 | Cerebras | `gpt-oss-120b` | `CEREBRAS_API_KEY` | **402 payment required** on every model |
+
+Model choice was measured, not assumed. On a real scoring payload
+`gemini-flash-latest` read-timed-out at 76s with persistent 503s, and
+`gemini-2.0-flash` / `gemini-2.5-flash` return 404 "no longer available" on this
+key. `gemini-flash-lite-latest` answers in ~2.6s and is the only one worth
+leading with.
 
 **Why multiple providers:** Groq's free tier is limited **per account, not per
 key**, so any other project on the same account competes for the same

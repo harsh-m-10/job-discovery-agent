@@ -36,8 +36,9 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from ingest.normalize import is_india_relevant   # noqa: E402
-from score.llm import (AllProvidersExhausted, apply_headcount_penalty,  # noqa: E402
-                       build_system_prompt, default_providers, score_batch)
+from score.llm import (AllProvidersExhausted, ScoringError,  # noqa: E402
+                       apply_headcount_penalty, build_system_prompt,
+                       default_providers, score_batch)
 from score.prefilter import prefilter            # noqa: E402
 from score.store import ScoreStore               # noqa: E402
 

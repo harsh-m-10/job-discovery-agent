@@ -53,6 +53,24 @@ class NotConfigured(ProviderError):
     """No API key present for this provider."""
 
 
+class ServerError(ProviderError):
+    """5xx — the vendor is briefly unwell, not out of budget.
+
+    Retried in place with exponential backoff before failing over, because
+    "model is overloaded" clears in seconds and burning the failover on it
+    would push every batch onto a worse provider for no reason.
+    """
+
+
+class PaymentRequired(ProviderError):
+    """The key is valid but the account has no usable quota (HTTP 402).
+
+    Distinct from a rate limit: no amount of waiting helps, and unlike a bad key
+    it is not a configuration mistake. Worth its own class so the operator sees
+    'add billing' rather than a generic failure.
+    """
+
+
 # Vendors phrase the same condition differently; these are matched against the
 # response body, which is the only place the distinction is actually stated.
 DAILY_MARKERS = ("tokens per day", "(tpd)", "requests per day", "(rpd)",
@@ -193,6 +211,10 @@ class ChatProvider:
                          **self.cfg.extra_headers},
                 json=payload, timeout=self.cfg.timeout,
             )
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            # Transient: an overloaded endpoint stops responding rather than
+            # returning 503. Same treatment as a 5xx — retry, then fail over.
+            raise ServerError(f"{self.cfg.name} {type(exc).__name__}") from exc
         except requests.RequestException as exc:
             raise ProviderError(f"{type(exc).__name__}: {exc}") from exc
 
@@ -200,6 +222,8 @@ class ChatProvider:
         body = resp.text[:400]
         lowered = body.lower()
 
+        if resp.status_code == 402:
+            raise PaymentRequired(f"{self.cfg.name}: {body}")
         if resp.status_code == 413:
             raise RequestTooLarge(body)
         if resp.status_code == 429:
@@ -212,7 +236,7 @@ class ChatProvider:
         if resp.status_code == 400 and any(m in lowered for m in TOO_LARGE_MARKERS):
             raise RequestTooLarge(body)
         if resp.status_code >= 500:
-            raise ProviderError(f"{self.cfg.name} {resp.status_code}: {body}")
+            raise ServerError(f"{self.cfg.name} {resp.status_code}: {body}")
         if resp.status_code >= 300:
             raise ProviderError(f"{self.cfg.name} {resp.status_code}: {body}")
 
