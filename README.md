@@ -128,6 +128,51 @@ automatically. `job_scores.provider` records which vendor scored each row.
 > tiers are not used for training), or set `enabled: false` on the `google`
 > entry in `settings.yaml` and let Groq take priority.
 
+### Model names rot — check before blaming the code
+
+Provider model ids are **not stable**, and they disappear without a deprecation
+window. Already observed on this project's own key:
+
+| model | what happened |
+|---|---|
+| `gemini-2.0-flash` | 404 "no longer available" |
+| `gemini-2.5-flash`, `gemini-2.5-flash-lite` | 404 "no longer available" |
+| `gemini-flash-latest` | read timeout at 76s, persistent 503 |
+| `gemini-3-flash-preview` | **preview** — will vanish without notice |
+| `llama-3.3-70b` (Cerebras) | never existed on that account |
+
+`python -m score.healthcheck` pings every enabled provider and cross-checks the
+configured model against the vendor's own model list, logging an ERROR when a
+model is no longer listed. It runs as a step in the ingest workflow and fails
+fast if nothing is usable.
+
+When scoring suddenly stops, run the healthcheck **first** — a rotted model id
+looks exactly like a broken integration.
+
+```bash
+python -m score.healthcheck      # which providers and models are live
+python -m notify.watchdog --dry-run   # is the pipeline actually flowing
+python -m notify.watchdog --test      # prove the alert email path works
+```
+
+## Alerting
+
+`notify/watchdog.py` runs after every ingestion and emails on three conditions,
+each of which otherwise produces **no symptom except an empty queue**:
+
+| condition | cooldown |
+|---|---|
+| the last ingestion run recorded board errors or deactivated a board | 6h |
+| no posting seen for the first time in 72h | 24h |
+| jobs stranded in `scoring_failed` because every provider refused | 6h |
+
+Alerts deduplicate through the `notifications` table using synthetic negative
+job ids, so a recurring failure emails once per cooldown rather than every
+fifteen minutes. **It needs an email transport**: set `RESEND_API_KEY` +
+`ALERT_EMAIL_TO`, or `SMTP_USER` + `SMTP_PASS` + `ALERT_EMAIL_TO`. Without one,
+alerts are logged as ERROR but never delivered — verify with
+`python -m notify.watchdog --test`.
+
 ## Board inventory
 
 `seeds/companies.yaml` is hand-maintained and unverified by definition — tokens
