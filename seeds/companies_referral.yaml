@@ -1,0 +1,34 @@
+# seeds/companies_referral.yaml
+#
+# Companies selected because the operator ALREADY HAS CONTACTS THERE, not
+# because of domain fit. The referral join found only 3 of 40 tracked boards had
+# any connection at all; his network concentrates at his employer, his
+# internship and his college. Adding boards where contacts already exist is the
+# cheapest way to make the referral edge real.
+#
+# Contact counts from the 2026-08-13 LinkedIn export:
+#   Oracle              15
+#   HPE                 10
+#   Standard Chartered   7
+#   Societe Generale     7   (listed as "Societe Generale Global Solution Centre")
+#   Infosys              9
+#
+# Nokia (7 contacts) was CUT. It was on this list purely for telecom adjacency,
+# and the operator is deliberately exiting telecom — see the domain_penalty rule
+# in config/candidate_profile.yaml. Adding it would surface reqs that the scorer
+# is now configured to penalise by -2.0.
+#
+# STATUS: none of these resolved on Greenhouse, Lever, Ashby, SmartRecruiters or
+# Workday under any probed slug. HPE has a Workday tenant on wd5 but its site
+# name was not guessable. All five need the manual lookup:
+#   open the careers page -> click Apply on any role -> read the ATS token out
+#   of the resulting URL -> add it below -> run scripts/verify_boards.py.
+#
+# Do not uncomment an entry until its token is verified AND its identity was
+# confirmed from a sample posting.
+
+# - {name: Oracle,             ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 2}
+# - {name: HPE,                ats: workday, token: "hpe|wd5|SITE",    category: gcc, priority: 2}
+# - {name: Standard Chartered, ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 2}
+# - {name: Societe Generale,   ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 3}
+# - {name: Infosys,            ats: workday, token: "TENANT|wdN|SITE", category: services, priority: 3}

@@ -9,10 +9,10 @@ Built to spec. Phase status:
 |---|---|---|
 | 0 | Board verifier | done — 37 boards live |
 | 1 | Ingestion | done, verified live (close + reopen proven against the DB) |
-| 2 | Scoring | done — prefilter + Groq batch scoring, calibrated at 18% scoring 8+ |
+| 2 | Scoring | done — prefilter + multi-provider LLM scoring with failover |
 | 3 | Notification | done — CallMeBot + email fallback, needs CallMeBot creds |
 | 4 | Dashboard | done — queue, detail, write-back, funnel, companies |
-| 5 | Referral join | not started |
+| 5 | Referral join | done — importer, normalization, matching (1,118 contacts) |
 | 6 | Workday adapter | done — Cisco, Target, Adobe |
 
 ## Local setup
@@ -83,54 +83,43 @@ there, not in code. Its `compensation` block is stripped out before the prompt
 is built and never reaches a model; there is deliberately no second file holding
 a CTC figure that could drift out of sync.
 
-## Groq free tier
+## LLM providers
 
-Tokens-per-minute is capped per model and counts requested output against the
-limit: 12,000 on `llama-3.3-70b-versatile` (the default, chosen for exactly
-this reason), 8,000 on `gpt-oss-120b` and `qwen3.6-27b`, 6,000 on
-`llama-3.1-8b-instant`. The spec's batch of 8 at 6,000 chars needs ~15,000 and
-is rejected outright, so `config/settings.yaml` ships a batch of 4 at 2,600
-chars. The scorer paces itself from the rate-limit headers and halves a batch
-that still comes back too large, so a run completes unattended — it just takes
-about 30s per batch once the budget is saturated. Raise both settings if the
-key is ever upgraded.
+Scoring runs against three vendors behind one interface
+(`score/providers.py`), chosen by `config/settings.yaml:llm_providers` and tried
+in `priority` order with automatic failover on 429 / 413 / 5xx:
 
-## Dashboard
+| Priority | Provider | Model | Key | Notes |
+|---|---|---|---|---|
+| 1 | Google AI Studio | `gemini-2.0-flash` | `GOOGLE_API_KEY` | largest free allowance |
+| 2 | Groq | `llama-3.3-70b-versatile` | `GROQ_API_KEY` | 12k TPM, 100k TPD |
+| 3 | Cerebras | `llama-3.3-70b` | `CEREBRAS_API_KEY` | third fallback |
 
-```bash
-cd dashboard && npm install
-cp .env.local.example .env.local     # fill in, then:
-npm run dev                          # http://localhost:3000/d/<DASHBOARD_SECRET>
-```
+**Why multiple providers:** Groq's free tier is limited **per account, not per
+key**, so any other project on the same account competes for the same
+tokens-per-minute and tokens-per-day budget. Spreading load across independent
+vendors is the only fix that does not involve paying, and it removes the single
+point of failure that took scoring down repeatedly.
 
-Everything lives under `/d/<32-char secret>`; every other path returns 404, and
-API routes authenticate on an `x-dashboard-secret` header so the secret never
-appears in a server access log. The service-role key is server-side only —
-`lib/db.ts` imports `server-only`, so an accidental client import fails the
-build rather than leaking the key.
+Every rate limit lives in `settings.yaml` — `rpm`, `tpm`, `batch_size`,
+`max_chars` are per provider, because the binding constraint differs by an
+order of magnitude between them. A fallback with a tighter ceiling re-chunks
+automatically. `job_scores.provider` records which vendor scored each row.
 
-Re-run `python scripts/sync_screening.py` after changing any compensation value
-in `candidate_profile.yaml`: the dashboard deploys from `dashboard/` and cannot
-read `../config` at runtime, so those values are materialised into
-`dashboard/lib/screening.generated.json`.
-
-## Workday boards
-
-Workday tokens are compound — `tenant|wdHost|site` — and all three parts are
-per-tenant and published nowhere. `scripts/find_workday.py` brute-forces them.
-The status codes are the opposite of the intuitive reading, and getting them
-backwards makes the search silently return nothing:
-
-| response | meaning |
-|---|---|
-| `404` | tenant is real, **site name** is wrong |
-| `422` | wrong wd host — a nonsense tenant returns 422 on *every* host |
-| `200` + JSON | correct |
-
-A browser User-Agent is mandatory; the bot filter rejects anything else. Boards
-are also huge (Target lists 2,000 postings), so the adapter reads the tenant's
-own country facet out of the first response and applies it server-side, then
-fetches descriptions only for postings that survive the location filter.
+> ### ⚠️ Google's free tier trains on your data
+>
+> Google AI Studio's **free** tier uses submitted prompts and responses to
+> improve their products, and human reviewers may read them. The scoring prompt
+> contains the full contents of `config/candidate_profile.yaml` — résumé,
+> project descriptions, employer names and education.
+>
+> Compensation is stripped before the prompt is built and is asserted in
+> `tests/test_llm.py`, so CTC and notice period never leave this machine. The
+> rest of the résumé does.
+>
+> If that is not acceptable, either enable billing on the Google project (paid
+> tiers are not used for training), or set `enabled: false` on the `google`
+> entry in `settings.yaml` and let Groq take priority.
 
 ## Board inventory
 

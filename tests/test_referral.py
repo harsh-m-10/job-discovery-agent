@@ -23,14 +23,18 @@ from scripts.import_connections import (UnsafePath, parse_connected_on,
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Profile URLs use example.invalid rather than the real host: the fixture does
+# not care about the value, and scripts/check_boundaries.py rightly fails on any
+# banned-platform URL in source. Real exports keep their own URLs in the
+# database, which is data, not code.
 SYNTHETIC_CSV = '''Notes:
 "When exporting your connection data, you may notice that some of the email addresses are missing."
 
 First Name,Last Name,URL,Email Address,Company,Position,Connected On
-Asha,Rao,https://www.linkedin.com/in/asha,,Walmart Global Tech India,Software Engineer II,11 Aug 2026
-Vikram,Singh,https://www.linkedin.com/in/vikram,,"Razorpay Software Private Limited",Backend Engineer,02 Jan 2025
-Neha,Gupta,https://www.linkedin.com/in/neha,,,,07 Aug 2026
-Rahul,Nair,https://www.linkedin.com/in/rahul,,Zeta Suite (Zeta India),Product Manager,15 Mar 2024
+Asha,Rao,https://example.invalid/in/asha,,Walmart Global Tech India,Software Engineer II,11 Aug 2026
+Vikram,Singh,https://example.invalid/in/vikram,,"Razorpay Software Private Limited",Backend Engineer,02 Jan 2025
+Neha,Gupta,https://example.invalid/in/neha,,,,07 Aug 2026
+Rahul,Nair,https://example.invalid/in/rahul,,Zeta Suite (Zeta India),Product Manager,15 Mar 2024
 '''
 
 

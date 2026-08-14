@@ -23,6 +23,7 @@ export default async function QueuePage({
       location: row.location,
       absolute_url: row.absolute_url,
       compensation: row.compensation,
+      headcountBand: row.headcount_band,
       fit_score: row.fit_score,
       min_years: row.min_years,
       max_years: row.max_years,

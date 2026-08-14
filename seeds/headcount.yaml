@@ -1,0 +1,56 @@
+# seeds/headcount.yaml
+#
+# Company size, tagged by hand — no ATS exposes headcount.
+#
+#   micro    <25 employees   -> scored -2.0
+#   small    25-100          -> neutral
+#   mid      100-1000        -> neutral
+#   large    1000+           -> neutral
+#   unknown                  -> neutral (safe default)
+#
+# Only `micro` is penalised, so an untagged company is never buried. Edit the
+# `band:` values below, then run: python scripts/set_headcount.py
+#
+# A rough guide for the judgement call: if the company has raised a Series B or
+# later, or has a named India office, it is almost certainly mid or large.
+
+- {name: Adobe,                   band: unknown }  # workday, gcc
+- {name: Atlan,                   band: unknown }  # ashby, product
+- {name: Chronosphere,            band: unknown }  # ashby, observability
+- {name: Cisco,                   band: unknown }  # workday, gcc
+- {name: Cloudflare,              band: unknown }  # greenhouse, product
+- {name: Cockroach Labs,          band: unknown }  # greenhouse, product
+- {name: Confluent,               band: unknown }  # ashby, product
+- {name: CRED,                    band: unknown }  # lever, product
+- {name: Databricks,              band: unknown }  # greenhouse, product
+- {name: Datadog,                 band: unknown }  # greenhouse, observability
+- {name: Elastic,                 band: unknown }  # greenhouse, observability
+- {name: Fi Money,                band: unknown }  # lever, product
+- {name: Freshworks,              band: unknown }  # lever, product
+- {name: Grafana Labs,            band: unknown }  # greenhouse, observability
+- {name: Groww,                   band: unknown }  # greenhouse, product
+- {name: Harness,                 band: unknown }  # greenhouse, product
+- {name: HighRadius,              band: unknown }  # greenhouse, product
+- {name: InMobi,                  band: unknown }  # greenhouse, product
+- {name: Level AI,                band: unknown }  # lever, product
+- {name: Meesho,                  band: unknown }  # lever, product
+- {name: MongoDB,                 band: unknown }  # greenhouse, product
+- {name: Navi,                    band: unknown }  # ashby, product
+- {name: New Relic,               band: unknown }  # greenhouse, observability
+- {name: Observe.AI,              band: unknown }  # greenhouse, product
+- {name: Plivo,                   band: unknown }  # lever, product
+- {name: Porter,                  band: unknown }  # lever, product
+- {name: Postman,                 band: unknown }  # greenhouse, product
+- {name: Razorpay,                band: unknown }  # greenhouse, product
+- {name: Redis,                   band: unknown }  # ashby, product
+- {name: Rubrik,                  band: unknown }  # greenhouse, product
+- {name: Sarvam AI,               band: unknown }  # ashby, product
+- {name: SigNoz,                  band: unknown }  # ashby, observability
+- {name: Slice,                   band: unknown }  # greenhouse, product
+- {name: Snowflake,               band: unknown }  # ashby, product
+- {name: Stripe,                  band: unknown }  # greenhouse, product
+- {name: Sumo Logic,              band: unknown }  # greenhouse, observability
+- {name: Target,                  band: unknown }  # workday, gcc
+- {name: Twilio,                  band: unknown }  # greenhouse, product
+- {name: Wiz,                     band: unknown }  # greenhouse, product
+- {name: Zeta,                    band: unknown }  # lever, product

@@ -25,7 +25,7 @@ type JobRow = {
   posted_at: string | null;
   first_seen_at: string;
   description?: string;
-  companies: { name: string; category: string | null } | null;
+  companies: { name: string; category: string | null; headcount_band: string | null } | null;
 };
 
 type ScoreRow = {
@@ -75,7 +75,7 @@ export async function getQueue(): Promise<QueueRow[]> {
     select<JobRow>(
       "jobs",
       "select=id,title,location,absolute_url,compensation,posted_at,first_seen_at," +
-        "companies(name,category)&closed_at=is.null",
+        "companies(name,category,headcount_band)&closed_at=is.null",
     ),
     select<ScoreRow>(
       "job_scores",
@@ -105,6 +105,7 @@ export async function getQueue(): Promise<QueueRow[]> {
       location: job.location,
       absolute_url: job.absolute_url,
       compensation: job.compensation,
+      headcount_band: job.companies?.headcount_band ?? null,
       posted_at: job.posted_at,
       first_seen_at: job.first_seen_at,
       fit_score: score.fit_score,
@@ -168,7 +169,7 @@ export async function getJob(jobId: number) {
     }>(
       "jobs",
       "select=id,ats_job_id,title,location,description,absolute_url,compensation," +
-        `posted_at,first_seen_at,closed_at,companies(name,category)&id=eq.${jobId}`,
+        `posted_at,first_seen_at,closed_at,companies(name,category,headcount_band)&id=eq.${jobId}`,
     ),
     select<ScoreRow & { model: string | null; reject_reason: string | null }>(
       "job_scores", `select=*&job_id=eq.${jobId}`,

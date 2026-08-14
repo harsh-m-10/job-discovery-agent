@@ -439,3 +439,79 @@ pre.jd {
   .bar-label { width: 66px; }
   .score[data-tier="high"] { width: 58px; height: 58px; font-size: 23px; }
 }
+
+/* ---------- apply-first actions ---------- */
+/* Apply is the action the operator is here to take; Applied is bookkeeping
+   about it. The visual weight is deliberately lopsided, and the confirmation
+   row only appears once the req has actually been opened. */
+
+.apply-row { display: flex; gap: 8px; align-items: stretch; margin-top: 14px; }
+
+.btn-apply {
+  flex: 1;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 14px 22px;
+  border-radius: 13px; border: none;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: 16px; font-weight: 750; letter-spacing: -0.01em;
+  cursor: pointer; text-decoration: none;
+  box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+  transition: filter .15s, transform .1s;
+}
+.btn-apply:hover { filter: brightness(1.07); text-decoration: none; color: var(--accent-ink); }
+.btn-apply:active { transform: scale(.985); }
+
+.btn-quiet {
+  background: transparent; border: 1px solid var(--line);
+  color: var(--text-3); font-size: 13px; font-weight: 600;
+  border-radius: 10px; padding: 8px 14px; min-height: 40px;
+}
+.btn-quiet:hover:not(:disabled) { color: var(--text-2); border-color: var(--text-3); }
+
+.after-apply {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 10px; padding: 11px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--accent-line); background: var(--accent-soft);
+  animation: reveal .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes reveal { from { opacity: 0; transform: translateY(-4px); } }
+.after-apply-q { font-size: 13px; font-weight: 650; color: var(--accent); }
+.after-apply-more { display: flex; gap: 6px; flex-wrap: wrap; width: 100%; }
+
+.btn-confirm {
+  background: var(--accent); color: var(--accent-ink); border: none;
+  font-size: 13.5px; font-weight: 700; padding: 9px 16px;
+  border-radius: 10px; min-height: 40px;
+}
+.btn-confirm:hover:not(:disabled) { filter: brightness(1.07); color: var(--accent-ink); }
+
+.already { margin-top: 8px; }
+.already summary {
+  cursor: pointer; list-style: none;
+  font-size: 12px; color: var(--text-3); padding: 4px 0;
+}
+.already summary::-webkit-details-marker { display: none; }
+.already summary:hover { color: var(--text-2); }
+.already summary::before { content: "› "; }
+.already[open] summary::before { content: "⌄ "; }
+
+/* company size band */
+.band {
+  display: inline-block; margin-left: 8px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .03em;
+  padding: 2px 7px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--text-3); background: var(--surface-2);
+  vertical-align: middle;
+}
+.band[data-band="micro"] { border-color: var(--bad); color: var(--bad); }
+
+@media (max-width: 760px) {
+  /* One-handed: Apply spans the card, the confirm row wraps under it. */
+  .apply-row { flex-direction: column; }
+  .btn-apply { min-height: 56px; font-size: 17px; }
+  .btn-quiet { width: 100%; }
+  .after-apply { flex-direction: column; align-items: stretch; }
+  .btn-confirm { width: 100%; min-height: 48px; }
+  .after-apply-more button { flex: 1 1 45%; }
+}

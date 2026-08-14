@@ -11,6 +11,7 @@ export type CardJob = {
   location: string | null;
   absolute_url: string;
   compensation: string | null;
+  headcountBand: string | null;
   fit_score: number | null;
   min_years: number | null;
   max_years: number | null;
@@ -39,8 +40,14 @@ function heatOf(hours: number): "hot" | "warm" | "cool" | "cold" {
   return "cold";
 }
 
-const SECONDARY = [
-  { status: "skipped", label: "Skip" },
+const BAND_LABEL: Record<string, string> = {
+  micro: "<25 people",
+  small: "25–100",
+  mid: "100–1k",
+  large: "1k+",
+};
+
+const OUTCOMES = [
   { status: "responded", label: "Got reply" },
   { status: "interviewing", label: "Interviewing" },
   { status: "rejected", label: "Rejected" },
@@ -60,9 +67,14 @@ export default function JobCard({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viaReferral, setViaReferral] = useState(false);
+  // The req link having been opened is what unlocks the bookkeeping row. It
+  // stops a job being marked applied that was never actually looked at.
+  const [opened, setOpened] = useState(false);
 
   const tier = tierOf(job.fit_score);
   const heat = heatOf(job.ageHours);
+  const band = job.headcountBand && job.headcountBand !== "unknown"
+    ? job.headcountBand : null;
 
   const exp =
     job.min_years !== null && job.max_years !== null
@@ -81,9 +93,6 @@ export default function JobCard({
         body: JSON.stringify({ job_id: job.job_id, status, via_referral: viaReferral }),
       });
       if (!res.ok) throw new Error(`${res.status}`);
-
-      // Play the card out first, then refresh. The server owns the frozen
-      // hours_since_posted, so the list is re-fetched rather than mutated here.
       setLeaving(true);
       onDone(label);
       setTimeout(() => router.refresh(), 320);
@@ -105,7 +114,14 @@ export default function JobCard({
           <Link href={`/d/${secret}/j/${job.job_id}`}>
             <h2 className="title">{job.title}</h2>
           </Link>
-          <div className="company">{job.company}</div>
+          <div className="company">
+            {job.company}
+            {band && (
+              <span className="band" data-band={job.headcountBand}>
+                {BAND_LABEL[job.headcountBand!] ?? job.headcountBand}
+              </span>
+            )}
+          </div>
           <div className="meta">
             <span className="fresh" data-heat={heat}>
               {heat === "hot" && <span className="live-dot" />}
@@ -115,7 +131,7 @@ export default function JobCard({
             {job.location && <span className="dot">{job.location}</span>}
             {job.compensation && <span className="dot">{job.compensation}</span>}
             {job.datedFromSighting && (
-              <span className="dot" title="The ATS gave no posting date; age is measured from when we first saw it">
+              <span className="dot" title="The ATS gave no posting date; age is measured from first sighting">
                 approx
               </span>
             )}
@@ -157,40 +173,68 @@ export default function JobCard({
         </div>
       )}
 
-      <div className="actions">
-        <button
-          className="primary"
-          disabled={busy !== null}
-          onClick={() => send("applied", "Applied")}
+      {/* Apply is the action; everything else is bookkeeping about it. */}
+      <div className="apply-row">
+        <a
+          className="btn-apply"
+          href={job.absolute_url}
+          target="_blank"
+          rel="noreferrer noopener"
+          onClick={() => setOpened(true)}
         >
-          {busy === "applied" ? "Saving…" : "Applied"}
-        </button>
-        {SECONDARY.map((a) => (
-          <button
-            key={a.status}
-            disabled={busy !== null}
-            onClick={() => send(a.status, a.label)}
-          >
-            {busy === a.status ? "…" : a.label}
-          </button>
-        ))}
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={viaReferral}
-            onChange={(e) => setViaReferral(e.target.checked)}
-          />
-          via referral
-        </label>
-        <a className="ghost-link" href={job.absolute_url} target="_blank" rel="noreferrer noopener">
-          Open posting ↗
+          Apply
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M7 17 17 7M9 7h8v8" />
+          </svg>
         </a>
+        <button className="btn-quiet" disabled={busy !== null}
+                onClick={() => send("skipped", "Skipped")}>
+          {busy === "skipped" ? "…" : "Skip"}
+        </button>
       </div>
 
-      {error && (
-        <div className="small" style={{ color: "var(--bad)", marginTop: 8, fontSize: 12 }}>
-          {error}
+      {opened ? (
+        <div className="after-apply">
+          <span className="after-apply-q">Did you apply?</span>
+          <button className="btn-confirm" disabled={busy !== null}
+                  onClick={() => send("applied", "Applied")}>
+            {busy === "applied" ? "Saving…" : "Yes, mark applied"}
+          </button>
+          <label className="check">
+            <input type="checkbox" checked={viaReferral}
+                   onChange={(e) => setViaReferral(e.target.checked)} />
+            via referral
+          </label>
+          <div className="after-apply-more">
+            {OUTCOMES.map((a) => (
+              <button key={a.status} className="btn-quiet" disabled={busy !== null}
+                      onClick={() => send(a.status, a.label)}>
+                {busy === a.status ? "…" : a.label}
+              </button>
+            ))}
+          </div>
         </div>
+      ) : (
+        <details className="already">
+          <summary>Already applied, or logging an outcome?</summary>
+          <div className="after-apply-more" style={{ marginTop: 8 }}>
+            <button className="btn-quiet" disabled={busy !== null}
+                    onClick={() => send("applied", "Applied")}>
+              {busy === "applied" ? "…" : "Mark applied"}
+            </button>
+            {OUTCOMES.map((a) => (
+              <button key={a.status} className="btn-quiet" disabled={busy !== null}
+                      onClick={() => send(a.status, a.label)}>
+                {busy === a.status ? "…" : a.label}
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {error && (
+        <div style={{ color: "var(--bad)", marginTop: 8, fontSize: 12 }}>{error}</div>
       )}
     </article>
   );

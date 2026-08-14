@@ -64,6 +64,7 @@ export type QueueRow = {
   location: string | null;
   absolute_url: string;
   compensation: string | null;
+  headcount_band: string | null;
   posted_at: string | null;
   first_seen_at: string;
   fit_score: number | null;

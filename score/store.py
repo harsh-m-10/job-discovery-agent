@@ -54,7 +54,8 @@ class ScoreStore:
             "jobs",
             "select=id,ats_job_id,title,location,description,absolute_url,"
             "compensation,posted_at,first_seen_at,content_hash,"
-            "companies(name,category)&closed_at=is.null&order=posted_at.desc",
+            "companies(name,category,headcount_band)&closed_at=is.null"
+            "&order=posted_at.desc",
         )
         if not only_unscored:
             return jobs
@@ -63,7 +64,7 @@ class ScoreStore:
 
     def scores(self, verdicts: list[str] | None = None) -> list[dict]:
         params = ("select=job_id,fit_score,verdict,min_years,max_years,"
-                  "matched_skills,gap_skills,reasoning,reject_reason,model,scored_at")
+                  "matched_skills,gap_skills,reasoning,reject_reason,model,provider,scored_at")
         if verdicts:
             params += f"&verdict=in.({','.join(verdicts)})"
         return self._get("job_scores", params + "&order=fit_score.desc.nullslast")

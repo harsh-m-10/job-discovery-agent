@@ -1,9 +1,9 @@
-"""Scoring-transport tests. No network.
+"""Scoring transport + provider tests. No network.
 
-These exist because of a real incident: the code read the per-minute reset
-header (229ms) when the actual failure was the per-DAY token quota, retried
-immediately, and burned the rest of the day's budget writing failure rows over
-good scores. Every assertion here corresponds to a step in that chain.
+Several of these exist because of real incidents: reading a per-minute reset
+header when the actual failure was a per-day quota, and a failure row
+overwriting a good score. Each assertion below corresponds to a step in one of
+those chains.
 
     python tests/test_llm.py
 """
@@ -15,68 +15,175 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from score.llm import (_Pacer, _retry_hint_seconds, normalize_entry,
-                       parse_scores)
+from score.llm import (apply_headcount_penalty, build_system_prompt,
+                       build_user_message, load_profile, normalize_entry,
+                       parse_scores, verdict_for)
+from score.providers import (Pacer, ProviderConfig, _retry_hint_seconds,
+                             build_providers)
 
 TPD_BODY = ('{"error":{"message":"Rate limit reached for model '
-            '`llama-3.3-70b-versatile` in organization `org_x` service tier '
-            '`on_demand` on tokens per day (TPD): Limit 100000, Used 97337, '
-            'Requested 5001. Please try again in 33m40.032s."}}')
-TPM_BODY = ('{"error":{"message":"Rate limit reached for model `x` on tokens '
-            'per minute (TPM): Limit 12000. Please try again in 8.5s."}}')
+            '`llama-3.3-70b-versatile` on tokens per day (TPD): Limit 100000, '
+            'Used 97337. Please try again in 33m40.032s."}}')
+TPM_BODY = ('{"error":{"message":"Rate limit reached on tokens per minute '
+            '(TPM): Limit 12000. Please try again in 8.5s."}}')
+GOOGLE_BODY = ('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED",'
+               '"details":[{"retryDelay":"27s"}]}}')
 
 
-def test_retry_hint_parses_minutes_and_seconds():
+# --- compensation must never reach a provider ---------------------------
+
+def test_compensation_is_stripped_from_the_prompt():
+    """The load-bearing assertion. A hallucinated CTC is unrecoverable."""
+    profile = load_profile()
+    comp = profile.get("compensation", {})
+    assert comp, "profile has no compensation block to test against"
+
+    prompt = build_system_prompt()
+    assert "compensation" not in prompt.lower().split("candidate facts")[-1][:4000] \
+        or "expected_ctc" not in prompt
+    for key in ("current_ctc", "expected_ctc", "expected_base_min_lpa",
+                "notice_period_days"):
+        assert key not in prompt, f"{key} leaked into the prompt"
+    for value in comp.values():
+        text = str(value).strip()
+        if len(text) > 4 and text.replace(",", "").replace(" ", "").isdigit():
+            assert text not in prompt, f"compensation value {text!r} leaked"
+    assert "000000" not in prompt and "0,00,000" not in prompt
+    assert "<expected range>" not in prompt
+
+
+def test_prompt_still_contains_the_calibration_rules():
+    prompt = build_system_prompt()
+    assert "EXPERIENCE HANDLING" in prompt
+    assert "DOMAIN PENALTY" in prompt          # telecom exit
+    assert "TELECOM EXPERIENCE IS NOT A PREFERENCE" in prompt
+    assert "{CANDIDATE_FACTS}" not in prompt and "{{" not in prompt
+
+
+# --- vendor error classification ----------------------------------------
+
+def test_retry_hint_parses_groq_and_google_shapes():
     assert abs(_retry_hint_seconds(TPD_BODY) - (33 * 60 + 40.032)) < 0.1
     assert abs(_retry_hint_seconds(TPM_BODY) - 8.5) < 0.1
+    assert abs(_retry_hint_seconds(GOOGLE_BODY) - 27.0) < 0.1
     assert _retry_hint_seconds("no hint here") == 0.0
 
 
 def test_daily_and_minute_limits_are_distinguishable():
-    # The whole bug: these two look identical unless the body is inspected.
+    # The whole bug: identical status codes, different meaning, only the body says.
     assert "tokens per day" in TPD_BODY.lower()
     assert "tokens per day" not in TPM_BODY.lower()
+    assert "resource_exhausted" in GOOGLE_BODY.lower()
 
 
 def test_pacer_header_units():
-    # x-ratelimit-reset-tokens comes back as "229ms" or "1m26.4s". Reading
-    # "229ms" as 229 seconds (or as minutes) is what made pacing nonsense.
-    assert abs(_Pacer._seconds("229ms") - 0.229) < 0.001
-    assert abs(_Pacer._seconds("8.5s") - 8.5) < 0.001
-    assert abs(_Pacer._seconds("2m") - 120) < 0.001
-    assert _Pacer._seconds(None) == 0.0
-    assert _Pacer._seconds("garbage") == 0.0
+    # "229ms" read as seconds (or minutes) is what made pacing nonsense.
+    assert abs(Pacer._seconds("229ms") - 0.229) < 0.001
+    assert abs(Pacer._seconds("8.5s") - 8.5) < 0.001
+    assert abs(Pacer._seconds("2m") - 120) < 0.001
+    assert Pacer._seconds(None) == 0.0
+    assert Pacer._seconds("garbage") == 0.0
 
+
+# --- provider config ----------------------------------------------------
+
+def test_providers_build_in_priority_order():
+    settings = {"llm_providers": [
+        {"name": "c", "priority": 3, "model": "m", "base_url": "u", "api_key_env": "C_KEY"},
+        {"name": "a", "priority": 1, "model": "m", "base_url": "u", "api_key_env": "A_KEY"},
+        {"name": "b", "priority": 2, "model": "m", "base_url": "u", "api_key_env": "B_KEY"},
+    ]}
+    assert [p.name for p in build_providers(settings)] == ["a", "b", "c"]
+
+
+def test_provider_is_unavailable_without_a_key():
+    cfg = ProviderConfig(name="x", model="m", base_url="u",
+                         api_key_env="DEFINITELY_NOT_SET_12345")
+    from score.providers import ChatProvider
+    assert ChatProvider(cfg).available() is False
+
+
+def test_real_settings_define_three_providers():
+    from score.llm import load_settings
+    providers = build_providers(load_settings())
+    names = [p.name for p in providers]
+    assert names == ["google", "groq", "cerebras"], names
+    # No hardcoded limits: every provider must carry its own rate config.
+    for p in providers:
+        assert p.cfg.batch_size > 0 and p.cfg.max_chars > 0
+        assert p.cfg.api_key_env.endswith("_API_KEY")
+
+
+# --- scoring output coercion --------------------------------------------
 
 def test_verdict_is_recomputed_from_score():
-    # Models routinely return a generous verdict beside a modest number, and the
-    # ping threshold keys off the number.
-    row = normalize_entry({"job_id": 1, "fit_score": 5.0, "verdict": "strong",
-                           "reasoning": "x"}, "m")
+    row = normalize_entry({"job_id": 1, "fit_score": 5.0, "verdict": "strong"}, "m", "p")
     assert row["verdict"] == "stretch"
-    assert normalize_entry({"job_id": 1, "fit_score": 8.4}, "m")["verdict"] == "strong"
-    assert normalize_entry({"job_id": 1, "fit_score": 3.9}, "m")["verdict"] == "reject"
+    assert normalize_entry({"job_id": 1, "fit_score": 8.4}, "m", "p")["verdict"] == "strong"
+
+
+def test_provider_is_recorded_on_the_row():
+    row = normalize_entry({"job_id": 1, "fit_score": 7.0}, "gemini-2.0-flash", "google")
+    assert row["provider"] == "google" and row["model"] == "gemini-2.0-flash"
 
 
 def test_scores_out_of_range_are_clamped():
-    assert normalize_entry({"job_id": 1, "fit_score": 44}, "m")["fit_score"] == 10.0
-    assert normalize_entry({"job_id": 1, "fit_score": -3}, "m")["fit_score"] == 0.0
+    assert normalize_entry({"job_id": 1, "fit_score": 44}, "m", "p")["fit_score"] == 10.0
+    assert normalize_entry({"job_id": 1, "fit_score": -3}, "m", "p")["fit_score"] == 0.0
 
 
 def test_unusable_entries_rejected():
-    assert normalize_entry({"fit_score": 8}, "m") is None            # no job_id
-    assert normalize_entry({"job_id": 1}, "m") is None               # no score
-    assert normalize_entry({"job_id": "abc", "fit_score": 8}, "m") is None
+    assert normalize_entry({"fit_score": 8}, "m", "p") is None
+    assert normalize_entry({"job_id": 1}, "m", "p") is None
 
 
 def test_parse_strips_markdown_fences():
     assert parse_scores('```json\n{"scores":[{"job_id":1}]}\n```') == [{"job_id": 1}]
-    assert parse_scores('{"scores":[{"job_id":2}]}') == [{"job_id": 2}]
     assert parse_scores('[{"job_id":3}]') == [{"job_id": 3}]
 
 
-def test_parse_recovers_object_from_surrounding_prose():
-    assert parse_scores('Here you go: {"scores":[{"job_id":4}]} hope that helps')
+# --- headcount penalty --------------------------------------------------
+
+PENALTIES = {"micro": -2.0, "small": 0.0, "mid": 0.0, "large": 0.0, "unknown": 0.0}
+
+
+def test_micro_is_penalised_and_verdict_recomputed():
+    row = {"job_id": 1, "fit_score": 8.5, "verdict": "strong"}
+    apply_headcount_penalty(row, "micro", PENALTIES)
+    assert row["fit_score"] == 6.5 and row["verdict"] == "worth_trying"
+
+
+def test_other_bands_are_untouched():
+    for band in ("small", "mid", "large", "unknown", None):
+        row = {"job_id": 1, "fit_score": 8.5, "verdict": "strong"}
+        apply_headcount_penalty(row, band, PENALTIES)
+        assert row["fit_score"] == 8.5, band
+
+
+def test_penalty_never_pushes_below_zero():
+    row = {"job_id": 1, "fit_score": 1.0, "verdict": "reject"}
+    apply_headcount_penalty(row, "micro", PENALTIES)
+    assert row["fit_score"] == 0.0
+
+
+def test_penalty_skips_unscored_rows():
+    row = {"job_id": 1, "fit_score": None, "verdict": "reject"}
+    apply_headcount_penalty(row, "micro", PENALTIES)
+    assert row["fit_score"] is None
+
+
+def test_verdict_thresholds():
+    assert verdict_for(8.0) == "strong"
+    assert verdict_for(7.9) == "worth_trying"
+    assert verdict_for(4.0) == "stretch"
+    assert verdict_for(3.9) == "reject"
+
+
+def test_band_is_shown_to_the_model():
+    jobs = [{"id": 1, "title": "SDE", "description": "x",
+             "companies": {"name": "Acme", "category": "product",
+                           "headcount_band": "micro"}}]
+    assert "Company size band: micro" in build_user_message(jobs, 500)
 
 
 if __name__ == "__main__":

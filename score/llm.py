@@ -1,4 +1,4 @@
-"""LAYER 2, stage 2 — Groq batch scoring.
+"""LAYER 2, stage 2 — batch scoring across multiple LLM providers.
 
 The prompt is assembled from config/candidate_profile.yaml so that resume facts
 and calibration rules live in one operator-editable file, never in code. The
@@ -6,123 +6,44 @@ and calibration rules live in one operator-editable file, never in code. The
 score inflation, and paraphrasing it in code would let the two drift apart.
 
 Nothing here may generate compensation, notice period, or any other factual
-personal field. Those are read from the profile and never pass through a model.
+personal field. `build_system_prompt` strips the whole `compensation` block, and
+`tests/test_llm.py` asserts it — a hallucinated CTC figure is unrecoverable once
+an employer has seen it.
+
+Provider selection and failover live in score/providers.py; this module owns the
+prompt, the batching, and turning a model's reply into a job_scores row.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 from pathlib import Path
-from typing import Any
 
-import requests
 import yaml
+
+from .providers import (ChatProvider, NotConfigured, ProviderError,
+                        QuotaExhausted, RateLimited, RequestTooLarge,
+                        build_providers)
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT_FILE = ROOT / "score" / "prompts" / "scoring.txt"
 PROFILE_FILE = ROOT / "config" / "candidate_profile.yaml"
 
-GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-
-# Chosen for its rate limit, not its leaderboard position. Groq's free tier caps
-# tokens-per-minute per model, and that ceiling — not quality — is the binding
-# constraint here: gpt-oss-120b and qwen3.6-27b allow 8,000 TPM, llama-3.1-8b
-# only 6,000, while llama-3.3-70b-versatile allows 12,000. The TPM budget counts
-# requested output tokens too, so a batch of 8 full-length JDs cannot fit on any
-# of them.
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
-
 FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.I | re.M)
+
+#: Output allowance per job. Entries run ~150 tokens; this leaves headroom
+#: without wasting budget, since requested output counts against most caps.
+OUTPUT_TOKENS_PER_JOB = 320
 
 
 class ScoringError(RuntimeError):
     pass
 
 
-class RequestTooLarge(ScoringError):
-    """The batch cannot fit the per-minute token budget; split it."""
-
-
-class RateLimited(ScoringError):
-    """Per-minute budget spent. Carries how long the API asked us to wait."""
-
-    def __init__(self, retry_after: float, message: str = ""):
-        super().__init__(f"rate limited (retry in {retry_after:.0f}s): {message}")
-        self.retry_after = retry_after
-
-
-class DailyQuotaExhausted(ScoringError):
-    """The per-day token budget is gone (TPD), not the per-minute one.
-
-    Distinct from RateLimited because the response is different in kind: no
-    amount of waiting inside a run recovers it, and retrying only burns whatever
-    budget is left. The run must stop and resume after the quota resets.
-    """
-
-    def __init__(self, retry_after: float, message: str = ""):
-        super().__init__(f"daily token quota exhausted: {message}")
-        self.retry_after = retry_after
-
-
-# "Please try again in 33m40.032s" — the only trustworthy delay for a daily
-# limit. The x-ratelimit-reset-tokens header describes the per-minute window and
-# reads as milliseconds here, which is what made the first implementation retry
-# immediately and burn the rest of the day's budget.
-RETRY_HINT = re.compile(
-    r"try again in\s+(?:(\d+)m)?\s*([\d.]+)s", re.I)
-
-
-def _retry_hint_seconds(body: str) -> float:
-    match = RETRY_HINT.search(body or "")
-    if not match:
-        return 0.0
-    minutes = float(match.group(1) or 0)
-    return minutes * 60 + float(match.group(2))
-
-
-class _Pacer:
-    """Keeps request rate inside the free-tier TPM ceiling.
-
-    Groq reports remaining tokens and a reset delay on every response. Reading
-    those is far more reliable than guessing a sleep interval, because the
-    budget is consumed by input, output, and other callers on the same key.
-    """
-
-    def __init__(self) -> None:
-        self.remaining: float | None = None
-        self.reset_after: float = 0.0
-
-    @staticmethod
-    def _seconds(value: str | None) -> float:
-        if not value:
-            return 0.0
-        match = re.match(r"^([\d.]+)\s*(ms|m|s)?$", value.strip())
-        if not match:
-            return 0.0
-        amount = float(match.group(1))
-        unit = match.group(2) or "s"
-        return amount / 1000 if unit == "ms" else amount * 60 if unit == "m" else amount
-
-    def observe(self, headers) -> None:
-        try:
-            self.remaining = float(headers.get("x-ratelimit-remaining-tokens", ""))
-        except ValueError:
-            self.remaining = None
-        self.reset_after = self._seconds(headers.get("x-ratelimit-reset-tokens"))
-
-    def wait_for(self, needed: int) -> None:
-        if self.remaining is not None and self.remaining < needed:
-            delay = min(max(self.reset_after, 1.0) + 1.0, 65.0)
-            print(f"    (token budget low: {self.remaining:.0f} left, "
-                  f"need ~{needed} — waiting {delay:.0f}s)")
-            time.sleep(delay)
-            self.remaining = None
-
-
-_pacer = _Pacer()
+class AllProvidersExhausted(ScoringError):
+    """Every configured provider refused. Callers must stop, not retry."""
 
 
 def load_profile() -> dict:
@@ -133,8 +54,8 @@ def load_profile() -> dict:
 def build_system_prompt(profile: dict | None = None) -> str:
     """Assemble the system prompt.
 
-    The compensation block is deliberately excluded: the model never needs it,
-    and a hallucinated CTC figure is unrecoverable once it reaches an employer.
+    The compensation block is excluded deliberately: the model never needs it,
+    and a hallucinated CTC or notice period is unrecoverable.
     """
     profile = profile or load_profile()
     facts = {k: v for k, v in profile.items()
@@ -162,9 +83,11 @@ def build_user_message(jobs: list[dict], char_limit: int) -> str:
     for job in jobs:
         company = (job.get("companies") or {}).get("name") or "Unknown"
         category = (job.get("companies") or {}).get("category") or ""
+        band = (job.get("companies") or {}).get("headcount_band") or "unknown"
         blocks.append(
             f"### job_id: {job['id']}\n"
             f"Company: {company}{f' (category: {category})' if category else ''}\n"
+            f"Company size band: {band}\n"
             f"Title: {job['title']}\n"
             f"Location: {job.get('location') or 'unstated'}\n"
             f"Job description:\n"
@@ -174,63 +97,15 @@ def build_user_message(jobs: list[dict], char_limit: int) -> str:
             f"in this order.\n\n" + "\n\n---\n\n".join(blocks))
 
 
-def _call_groq(system: str, user: str, model: str, max_output: int,
-               timeout: int = 180) -> str:
-    key = os.environ.get("GROQ_API_KEY")
-    if not key:
-        raise ScoringError("GROQ_API_KEY is not set")
-
-    # Rough but adequate: the budget check only needs to be right to within a
-    # few hundred tokens, and requested output counts against TPM as well.
-    estimated = (len(system) + len(user)) // 4 + max_output
-    _pacer.wait_for(estimated)
-
-    resp = requests.post(
-        GROQ_URL,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "messages": [{"role": "system", "content": system},
-                         {"role": "user", "content": user}],
-            "temperature": 0.2,          # scoring should be near-deterministic
-            "max_tokens": max_output,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=timeout,
-    )
-    _pacer.observe(resp.headers)
-
-    if resp.status_code == 413:
-        raise RequestTooLarge(resp.text[:200])
-    if resp.status_code == 429:
-        body = resp.text[:300]
-        # A 429 whose message is about request size will never succeed on retry.
-        if "Request too large" in body:
-            raise RequestTooLarge(body)
-        hint = _retry_hint_seconds(body)
-        if "tokens per day" in body.lower() or "(tpd)" in body.lower():
-            raise DailyQuotaExhausted(hint, body)
-        # Otherwise the per-minute budget is spent. Groq says how long to wait;
-        # sleeping that long beats failing the batch, since a failed batch costs
-        # a re-run over the whole queue.
-        delay = hint or _Pacer._seconds(resp.headers.get("retry-after")) or \
-            _Pacer._seconds(resp.headers.get("x-ratelimit-reset-tokens")) or 30.0
-        raise RateLimited(min(delay + 2.0, 90.0), body)
-    if resp.status_code >= 300:
-        raise ScoringError(f"groq {resp.status_code}: {resp.text[:300]}")
-    return resp.json()["choices"][0]["message"]["content"]
-
-
 def parse_scores(text: str) -> list[dict]:
     """Strip fences defensively even though JSON mode is requested — the
-    instruction not to emit them is not a guarantee."""
+    instruction not to emit them is not a guarantee, and it varies by vendor."""
     cleaned = FENCE.sub("", text or "").strip()
     if not cleaned:
         raise ScoringError("empty response")
     try:
         payload = json.loads(cleaned)
     except json.JSONDecodeError as exc:
-        # Last resort: pull the outermost object out of surrounding prose.
         match = re.search(r"\{.*\}", cleaned, re.S)
         if not match:
             raise ScoringError(f"unparseable response: {cleaned[:200]}") from exc
@@ -244,9 +119,6 @@ def parse_scores(text: str) -> list[dict]:
     raise ScoringError(f"no score array in response: {cleaned[:200]}")
 
 
-VERDICTS = ("strong", "worth_trying", "stretch", "reject")
-
-
 def _clean_number(value, low=0.0, high=10.0) -> float | None:
     try:
         num = float(value)
@@ -255,7 +127,33 @@ def _clean_number(value, low=0.0, high=10.0) -> float | None:
     return max(low, min(high, num))
 
 
-def normalize_entry(entry: dict, model: str) -> dict | None:
+def verdict_for(score: float) -> str:
+    return ("strong" if score >= 8.0 else
+            "worth_trying" if score >= 6.0 else
+            "stretch" if score >= 4.0 else "reject")
+
+
+def apply_headcount_penalty(row: dict, band: str | None,
+                            penalties: dict[str, float]) -> dict:
+    """Adjust a scored row for company size, then re-derive the verdict.
+
+    Applied in code rather than delegated to the prompt: the band is a hard fact
+    from our own database, not something the model should be re-judging, and a
+    deterministic adjustment is auditable — `fit_score` moves by exactly the
+    configured amount and nothing else changes.
+    """
+    if row.get("fit_score") is None:
+        return row
+    delta = float(penalties.get((band or "unknown").lower(), 0.0))
+    if not delta:
+        return row
+    adjusted = max(0.0, min(10.0, float(row["fit_score"]) + delta))
+    row["fit_score"] = round(adjusted, 1)
+    row["verdict"] = verdict_for(adjusted)
+    return row
+
+
+def normalize_entry(entry: dict, model: str, provider: str = "") -> dict | None:
     """Coerce one model entry into a job_scores row, or None if unusable.
 
     The verdict is recomputed from fit_score rather than trusted: models
@@ -272,9 +170,7 @@ def normalize_entry(entry: dict, model: str) -> dict | None:
     if score is None:
         return None
 
-    verdict = ("strong" if score >= 8.0 else
-               "worth_trying" if score >= 6.0 else
-               "stretch" if score >= 4.0 else "reject")
+    verdict = verdict_for(score)
 
     def string_list(value) -> list[str]:
         if isinstance(value, str):
@@ -283,7 +179,6 @@ def normalize_entry(entry: dict, model: str) -> dict | None:
             return []
         return [str(v).strip() for v in value if str(v).strip()][:8]
 
-    reasoning = str(entry.get("reasoning") or "").strip()
     return {
         "job_id": job_id,
         "fit_score": round(score, 1),
@@ -292,69 +187,108 @@ def normalize_entry(entry: dict, model: str) -> dict | None:
         "max_years": _clean_number(entry.get("max_years"), 0.0, 50.0),
         "matched_skills": string_list(entry.get("matched_skills")),
         "gap_skills": string_list(entry.get("gap_skills")),
-        "reasoning": reasoning[:600],
+        "reasoning": str(entry.get("reasoning") or "").strip()[:600],
         "model": model,
+        "provider": provider,
     }
 
 
-#: Output allowance per job. Entries run ~150 tokens; this leaves headroom
-#: without wasting TPM budget, which counts requested output against the cap.
-OUTPUT_TOKENS_PER_JOB = 320
+def _attempt(provider: ChatProvider, jobs: list[dict], system: str,
+             char_limit: int, attempts: int = 3) -> list[dict]:
+    """Score `jobs` on one provider, or raise so the caller falls through.
 
-
-def score_batch(jobs: list[dict], *, model: str = DEFAULT_MODEL,
-                char_limit: int = 6000, system: str | None = None) -> list[dict]:
-    """Score one batch. Retries once on malformed JSON, then gives up on the
-    batch — a single bad response must never abort a run."""
-    system = system or build_system_prompt()
-    user = build_user_message(jobs, char_limit)
+    Handles the three recoverable-in-place conditions: an oversized request is
+    split, a per-minute limit is waited out, and a malformed reply is retried.
+    A quota exhaustion is *not* recoverable here and propagates immediately.
+    """
     wanted = {j["id"] for j in jobs}
-    max_output = min(4096, OUTPUT_TOKENS_PER_JOB * len(jobs) + 200)
-
+    max_output = min(4096, provider.cfg.max_output_tokens_per_job * len(jobs) + 200)
+    user = build_user_message(jobs, char_limit)
     last_error = ""
-    for attempt in range(3):
+
+    for attempt in range(attempts):
         try:
-            raw = _call_groq(system, user, model, max_output)
+            raw = provider.complete(system, user, max_output)
             entries = parse_scores(raw)
-        except DailyQuotaExhausted:
-            # Propagate: this batch was never attempted in any meaningful sense,
-            # and marking its jobs failed would hide them from the next run.
+        except RequestTooLarge as exc:
+            if len(jobs) > 1:
+                mid = len(jobs) // 2
+                return (_attempt(provider, jobs[:mid], system, char_limit)
+                        + _attempt(provider, jobs[mid:], system, char_limit))
+            if char_limit > 1000:
+                return _attempt(provider, jobs, system, char_limit // 2)
             raise
         except RateLimited as exc:
             last_error = str(exc)
-            if attempt < 2:
-                print(f"    (rate limited — waiting {exc.retry_after:.0f}s)")
-                time.sleep(exc.retry_after)
-            continue
-        except RequestTooLarge as exc:
-            # Halve and recurse: one oversized JD must not cost the whole batch.
-            if len(jobs) > 1:
-                mid = len(jobs) // 2
-                return (score_batch(jobs[:mid], model=model, char_limit=char_limit,
-                                    system=system)
-                        + score_batch(jobs[mid:], model=model, char_limit=char_limit,
-                                      system=system))
-            # A single job that still will not fit: shrink its description.
-            if char_limit > 1200:
-                return score_batch(jobs, model=model, char_limit=char_limit // 2,
-                                   system=system)
-            last_error = f"request too large: {exc}"
-            break
+            if attempt < attempts - 1:
+                # Exponential backoff on top of the vendor's own hint.
+                delay = min(exc.retry_after * (2 ** attempt), 90.0)
+                print(f"    [{provider.name}] rate limited — waiting {delay:.0f}s")
+                time.sleep(delay)
+                continue
+            raise
         except ScoringError as exc:
             last_error = str(exc)
+            if attempt < attempts - 1:
+                time.sleep(1.5 * (2 ** attempt))
+                continue
+            raise ProviderError(f"{provider.name}: {last_error}") from exc
+
+        rows = [r for r in (normalize_entry(e, provider.cfg.model, provider.name)
+                            for e in entries) if r]
+        rows = [r for r in rows if r["job_id"] in wanted]
+        if not rows:
+            last_error = "no usable entries"
+            if attempt < attempts - 1:
+                continue
+            raise ProviderError(f"{provider.name}: {last_error}")
+
+        for job_id in wanted - {r["job_id"] for r in rows}:
+            rows.append({"job_id": job_id, "fit_score": None, "verdict": "reject",
+                         "reject_reason": "scoring_failed:omitted_by_model",
+                         "model": provider.cfg.model, "provider": provider.name})
+        return rows
+
+    raise ProviderError(f"{provider.name}: {last_error}")
+
+
+def score_batch(jobs: list[dict], providers: list[ChatProvider], *,
+                system: str | None = None) -> list[dict]:
+    """Score one batch, falling through providers until one succeeds.
+
+    Batch size and character limit are per-provider, so a fallback with a
+    tighter ceiling re-chunks rather than failing. Raises
+    AllProvidersExhausted only when every configured vendor has refused, which
+    the caller must treat as "stop the run", not "mark these jobs failed".
+    """
+    system = system or build_system_prompt()
+    usable = [p for p in providers if p.available()]
+    if not usable:
+        raise AllProvidersExhausted(
+            "no provider has an API key set — expected one of: "
+            + ", ".join(p.cfg.api_key_env for p in providers)
+        )
+
+    failures: list[str] = []
+    for provider in usable:
+        try:
+            return _attempt(provider, jobs, system, provider.cfg.max_chars)
+        except QuotaExhausted as exc:
+            failures.append(f"{provider.name}: quota exhausted")
+            print(f"    [{provider.name}] quota exhausted — falling through")
+            continue
+        except (RateLimited, RequestTooLarge, NotConfigured, ProviderError) as exc:
+            failures.append(f"{provider.name}: {str(exc)[:90]}")
+            print(f"    [{provider.name}] failed ({str(exc)[:70]}) — falling through")
             continue
 
-        rows = [r for r in (normalize_entry(e, model) for e in entries) if r]
-        rows = [r for r in rows if r["job_id"] in wanted]
-        if rows:
-            missing = wanted - {r["job_id"] for r in rows}
-            for job_id in missing:
-                rows.append({"job_id": job_id, "fit_score": None, "verdict": "reject",
-                             "reject_reason": "scoring_failed:omitted_by_model",
-                             "model": model})
-            return rows
-        last_error = "no usable entries"
+    raise AllProvidersExhausted("; ".join(failures))
 
-    return [{"job_id": job_id, "fit_score": None, "verdict": "reject",
-             "reject_reason": f"scoring_failed:{last_error[:80]}", "model": model}
-            for job_id in wanted]
+
+def load_settings() -> dict:
+    with (ROOT / "config" / "settings.yaml").open(encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def default_providers() -> list[ChatProvider]:
+    return build_providers(load_settings())

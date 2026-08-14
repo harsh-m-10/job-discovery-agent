@@ -36,8 +36,8 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from ingest.normalize import is_india_relevant   # noqa: E402
-from score.llm import (DEFAULT_MODEL, DailyQuotaExhausted,  # noqa: E402
-                       ScoringError, build_system_prompt, score_batch)
+from score.llm import (AllProvidersExhausted, apply_headcount_penalty,  # noqa: E402
+                       build_system_prompt, default_providers, score_batch)
 from score.prefilter import prefilter            # noqa: E402
 from score.store import ScoreStore               # noqa: E402
 
@@ -96,7 +96,7 @@ def main() -> int:
     ap.add_argument("--rescore", action="store_true", help="ignore existing scores")
     ap.add_argument("--retry-failed", action="store_true",
                     help="re-score jobs whose previous scoring attempt errored")
-    ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--provider", help="use only this provider (e.g. google)")
     ap.add_argument("--batch-size", type=int,
                     help="override llm_batch_size — needed when falling back to "
                          "a model with a tighter per-minute cap")
@@ -107,10 +107,26 @@ def main() -> int:
     args = ap.parse_args()
 
     settings = load_settings()
-    batch_size = args.batch_size or int(settings.get("llm_batch_size", 8))
-    char_limit = args.char_limit or int(settings.get("description_char_limit", 6000))
     max_years = float(settings.get("max_experience_years", 4))
+    penalties = settings.get("headcount_penalties") or {}
     store = ScoreStore()
+
+    providers = default_providers()
+    if args.provider:
+        providers = [p for p in providers if p.name == args.provider]
+    configured = [p for p in providers if p.available()]
+    print("providers: " + ", ".join(
+        f"{p.name}({'ready' if p.available() else 'no key'})" for p in providers))
+    if not configured and not args.prefilter_only:
+        print("\nNo provider has an API key set. Expected one of: "
+              + ", ".join(p.cfg.api_key_env for p in providers), file=sys.stderr)
+        return 2
+
+    # Batch size and char limit follow the first ready provider unless overridden;
+    # a fallback with a tighter ceiling re-chunks inside score_batch.
+    lead = configured[0] if configured else providers[0]
+    batch_size = args.batch_size or lead.cfg.batch_size
+    char_limit = args.char_limit or lead.cfg.max_chars
 
     # Jobs that already carry a real verdict. A scoring_failed row is a
     # transport error, not a judgement, and must never overwrite one of these:
@@ -191,24 +207,26 @@ def main() -> int:
         survivors = survivors[: args.limit]
 
     system = build_system_prompt()
-    print(f"\nscoring {len(survivors)} job(s) with {args.model}, "
-          f"batches of {batch_size}...")
+    print(f"\nscoring {len(survivors)} job(s), batches of {batch_size}, "
+          f"lead provider {lead.name} ({lead.cfg.model})...")
+    by_id_all = {j["id"]: j for j in survivors}
 
     scored_rows: list[dict] = []
     for i in range(0, len(survivors), batch_size):
         batch = survivors[i: i + batch_size]
         started = time.monotonic()
         try:
-            rows = score_batch(batch, model=args.model, char_limit=char_limit,
-                               system=system)
-        except DailyQuotaExhausted as exc:
+            rows = score_batch(batch, providers, system=system)
+            for row in rows:
+                band = (by_id_all.get(row["job_id"], {}).get("companies")
+                        or {}).get("headcount_band")
+                apply_headcount_penalty(row, band, penalties)
+        except AllProvidersExhausted as exc:
             remaining = len(survivors) - i
-            mins = exc.retry_after / 60
-            print(f"\nStopping: {exc}".split("{")[0].strip())
-            print(f"  {remaining} job(s) left unscored and unmarked — they stay in "
-                  f"the normal queue and will be picked up by the next run.")
-            print(f"  Groq's free tier allows 100,000 tokens/day on this model; "
-                  f"retry in about {mins:.0f} minute(s).")
+            print("\nStopping: every configured provider refused.")
+            print(f"  {exc}")
+            print(f"  {remaining} job(s) left unscored and unmarked — they stay "
+                  f"in the normal queue and are picked up by the next run.")
             break
         except ScoringError as exc:
             print(f"  batch {i // batch_size + 1}: {exc}")
