@@ -8,6 +8,13 @@ import screening from "@/lib/screening.generated.json";
 
 export const dynamic = "force-dynamic";
 
+function tierOf(score: number | null): "high" | "mid" | "low" {
+  if (score === null) return "low";
+  if (score >= 8) return "high";
+  if (score >= 7) return "mid";
+  return "low";
+}
+
 export default async function JobPage({
   params,
 }: {
@@ -21,131 +28,133 @@ export default async function JobPage({
   if (!data) notFound();
   const { job, score, application, referrals } = data;
 
-  const posted = effectivePostedAt(job);
-  const age = hoursSince(posted);
+  const ageHours = hoursSince(effectivePostedAt(job));
+  const heat = ageHours < 6 ? "hot" : ageHours < 24 ? "warm" : ageHours < 48 ? "cool" : "cold";
   const company = job.companies?.name ?? "";
+  const tier = tierOf(score?.fit_score ?? null);
 
   return (
     <>
-      <div className="spread" style={{ marginBottom: 12 }}>
-        <div>
-          <h2 style={{ margin: "0 0 4px", fontSize: 18 }}>{job.title}</h2>
-          <div className="muted small">
-            {company}
-            {job.location ? ` · ${job.location}` : ""} · {formatAge(age)} old
-            {job.compensation ? ` · ${job.compensation}` : ""}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 16 }}>
+        <div className="score" data-tier={tier}>
+          {score?.fit_score?.toFixed(1) ?? "—"}
+          <span>FIT</span>
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h1 style={{ margin: "2px 0 4px", fontSize: 19, letterSpacing: "-0.02em", lineHeight: 1.25 }}>
+            {job.title}
+          </h1>
+          <div className="company">{company}</div>
+          <div className="meta">
+            <span className="fresh" data-heat={heat}>
+              {heat === "hot" && <span className="live-dot" />}
+              {formatAge(ageHours)} old
+            </span>
+            {job.location && <span className="dot">{job.location}</span>}
+            {job.compensation && <span className="dot">{job.compensation}</span>}
             {job.closed_at && (
-              <span style={{ color: "var(--danger)" }}> · CLOSED on the board</span>
+              <span className="dot" style={{ color: "var(--bad)" }}>closed on the board</span>
             )}
           </div>
         </div>
-        <div className="row" style={{ gap: 10 }}>
-          <Link href={`/d/${secret}`}>← queue</Link>
-          <a href={job.absolute_url} target="_blank" rel="noreferrer noopener">
-            apply ↗
-          </a>
-        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <Link href={`/d/${secret}`} className="btn" style={{ display: "inline-flex", alignItems: "center" }}>
+          ← Queue
+        </Link>
+        <a className="btn" style={{ display: "inline-flex", alignItems: "center" }}
+           href={job.absolute_url} target="_blank" rel="noreferrer noopener">
+          Open posting ↗
+        </a>
       </div>
 
       <div className="grid2">
         <div>
-          <div className="card">
-            <div className="muted small" style={{ marginBottom: 6 }}>
-              Job description
-            </div>
+          <section className="panel">
+            <div className="panel-title">Job description</div>
             <pre className="jd">{job.description ?? "(no description captured)"}</pre>
-          </div>
+          </section>
         </div>
 
         <div>
-          <div className="card">
+          <section className="panel">
+            <div className="panel-title">Assessment</div>
             {score ? (
               <>
-                <div className="row" style={{ gap: 12, marginBottom: 6 }}>
-                  <span className={`score v-${score.verdict}`}>
-                    {score.fit_score?.toFixed(1) ?? "—"}
-                  </span>
-                  <span className="muted">{score.verdict}</span>
-                </div>
-                <div className="small">{score.reasoning}</div>
-                <div style={{ marginTop: 8 }}>
+                <p className="reason" style={{ marginTop: 0 }}>{score.reasoning}</p>
+                <div className="chips">
                   {(score.matched_skills ?? []).map((s: string) => (
-                    <span className="tag" key={`m${s}`}>{s}</span>
+                    <span className="chip" key={`m${s}`}>{s}</span>
                   ))}
                   {(score.gap_skills ?? []).map((s: string) => (
-                    <span className="tag gap" key={`g${s}`}>{s}</span>
+                    <span className="chip" data-kind="gap" key={`g${s}`}>{s}</span>
                   ))}
                 </div>
-                <div className="muted small" style={{ marginTop: 8 }}>
-                  stated experience:{" "}
+                <div className="note">
                   {score.min_years !== null && score.max_years !== null
-                    ? `${score.min_years}-${score.max_years}y`
+                    ? `Asks ${score.min_years}-${score.max_years} years`
                     : score.min_years !== null
-                      ? `${score.min_years}y+`
-                      : "unstated"}
+                      ? `Asks ${score.min_years}+ years`
+                      : "Experience unstated"}
                   {score.model ? ` · scored by ${score.model}` : ""}
                 </div>
               </>
             ) : (
-              <div className="muted small">Not scored yet.</div>
+              <div style={{ color: "var(--text-3)", fontSize: 13 }}>Not scored yet.</div>
             )}
-          </div>
+          </section>
 
-          <div className="card">
-            <div className="muted small" style={{ marginBottom: 8 }}>Status</div>
+          <section className="panel">
+            <div className="panel-title">Status · {application?.status ?? "queued"}</div>
             <StatusButtons
               jobId={job.id}
               secret={secret}
               current={application?.status ?? "queued"}
             />
-            <div className="muted small" style={{ marginTop: 8 }}>
-              current: {application?.status ?? "queued"}
-              {application?.hours_since_posted !== null &&
-                application?.hours_since_posted !== undefined && (
-                  <> · applied {application.hours_since_posted.toFixed(1)}h after posting</>
-                )}
-              {application?.via_referral ? " · via referral" : ""}
-            </div>
-          </div>
+            {application?.hours_since_posted !== null &&
+              application?.hours_since_posted !== undefined && (
+                <div className="note">
+                  Applied {application.hours_since_posted.toFixed(1)}h after posting
+                  {application.via_referral ? " · via referral" : ""}
+                </div>
+              )}
+          </section>
 
-          <div className="card">
-            <div className="muted small" style={{ marginBottom: 8 }}>
-              Referral contacts
-            </div>
+          <section className="panel">
+            <div className="panel-title">Referral contacts</div>
             {referrals.length === 0 ? (
-              <div className="muted small">
-                None at {company || "this company"}. Import your LinkedIn
-                connections export with{" "}
-                <code>python scripts/import_connections.py</code> (phase 5).
+              <div style={{ color: "var(--text-3)", fontSize: 13 }}>
+                None at {company || "this company"} yet. Import your LinkedIn
+                connections export to populate this.
               </div>
             ) : (
-              referrals.map((c: any) => (
-                <div key={c.id} style={{ marginBottom: 4 }}>
-                  <span className={`tag${c.is_batchmate ? " batchmate" : ""}`}>
+              <div className="referral" style={{ marginTop: 0 }}>
+                {referrals.map((c: any) => (
+                  <span className="referral-name" key={c.id}>
                     {c.full_name}
+                    {c.title && <span className="role"> · {c.title}</span>}
+                    {c.is_batchmate && <span className="batch-pill">batchmate</span>}
                   </span>
-                  <span className="muted small">{c.title ?? ""}</span>
-                </div>
-              ))
+                ))}
+              </div>
             )}
-          </div>
+          </section>
 
-          <div className="card">
-            <div className="muted small" style={{ marginBottom: 8 }}>
-              Screening answers
-            </div>
-            <Copyable label="Notice period" value={`${screening.notice_period_days} days`} />
-            <Copyable label="Current CTC" value={String(screening.current_ctc)} />
-            <Copyable label="Expected CTC" value={String(screening.expected_ctc)} />
-            <Copyable label="Location preference" value={String(screening.location_preference)} />
+          <section className="panel">
+            <div className="panel-title">Screening answers</div>
+            <Copyable label="NOTICE PERIOD" value={`${screening.notice_period_days} days`} />
+            <Copyable label="CURRENT CTC" value={String(screening.current_ctc)} />
+            <Copyable label="EXPECTED CTC" value={String(screening.expected_ctc)} />
+            <Copyable label="LOCATION" value={String(screening.location_preference)} />
             <Copyable
-              label="Total experience"
+              label="TOTAL EXPERIENCE"
               value={`${screening.years_experience_post_grad} years post-graduation (${screening.years_experience_incl_internship} including an 8-month full-time internship)`}
             />
-            <div className="muted small" style={{ marginTop: 6 }}>
-              Read verbatim from config/candidate_profile.yaml. Never generated.
+            <div className="note">
+              Read verbatim from candidate_profile.yaml. Never LLM-generated.
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </>

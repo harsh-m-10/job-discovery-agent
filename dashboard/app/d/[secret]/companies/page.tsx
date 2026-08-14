@@ -19,73 +19,81 @@ export default async function CompaniesPage({
 }) {
   const { secret } = await params;
   const companies = (await getCompanies()) as Company[];
+  const active = companies.filter((c) => c.active).length;
   const failing = companies.filter((c) => c.consecutive_failures > 0);
 
   return (
     <>
-      <div className="spread" style={{ marginBottom: 14 }}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>
-          Boards <span className="muted">({companies.length})</span>
-        </h2>
-        <span className="muted small">
-          {companies.filter((c) => c.active).length} active ·{" "}
-          {failing.length} with failures
-        </span>
-      </div>
+      <section className="panel">
+        <div className="panel-title">Board health</div>
+        <div className="stat-row">
+          <div className="stat" data-hero="true">
+            <div className="stat-k">ACTIVE BOARDS</div>
+            <div className="stat-v">{active}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-k">TOTAL</div>
+            <div className="stat-v">{companies.length}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-k">FAILING</div>
+            <div className="stat-v" style={{ color: failing.length ? "var(--bad)" : undefined }}>
+              {failing.length}
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>company</th>
-              <th>ats</th>
-              <th>token</th>
-              <th>category</th>
-              <th>poll</th>
-              <th>last ok</th>
-              <th className="num">fails</th>
-              <th>state</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {companies.map((c) => (
-              <tr key={c.id} style={{ opacity: c.active ? 1 : 0.5 }}>
-                <td>{c.name}</td>
-                <td className="muted">{c.ats}</td>
-                <td className="muted small">{c.board_token}</td>
-                <td className="muted small">{c.category ?? ""}</td>
-                <td className="muted small">{CADENCE[c.priority] ?? "hourly"}</td>
-                <td className="muted small">
-                  {c.last_ok_at
-                    ? `${formatAge(hoursSince(new Date(c.last_ok_at)))} ago`
-                    : "never"}
-                </td>
-                <td
-                  className="num"
-                  style={{ color: c.consecutive_failures > 0 ? "var(--danger)" : undefined }}
-                >
-                  {c.consecutive_failures}
-                </td>
-                <td className={c.active ? "" : "muted"}>
-                  {c.active ? "active" : "disabled"}
-                </td>
-                <td>
-                  <CompanyToggle id={c.id} active={c.active} secret={secret} />
-                </td>
+      <section className="panel">
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>ATS</th>
+                <th>Poll</th>
+                <th>Last ok</th>
+                <th>Fails</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="muted small">
-        A board is deactivated automatically after 5 consecutive failures, which
-        almost always means the token changed. Re-enabling here also resets the
-        failure count — check the token with{" "}
-        <code>python scripts/verify_boards.py</code> first, or it will just trip
-        again.
-      </div>
+            </thead>
+            <tbody>
+              {companies.map((c) => (
+                <tr key={c.id} style={{ opacity: c.active ? 1 : 0.45 }}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{c.name}</div>
+                    <div className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
+                      {c.board_token}
+                    </div>
+                  </td>
+                  <td style={{ color: "var(--text-2)" }}>{c.ats}</td>
+                  <td style={{ color: "var(--text-3)", fontSize: 12 }}>
+                    {CADENCE[c.priority] ?? "hourly"}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12, color: "var(--text-3)" }}>
+                    {c.last_ok_at ? `${formatAge(hoursSince(new Date(c.last_ok_at)))} ago` : "never"}
+                  </td>
+                  <td
+                    className="mono"
+                    style={{ color: c.consecutive_failures > 0 ? "var(--bad)" : "var(--text-3)" }}
+                  >
+                    {c.consecutive_failures}
+                  </td>
+                  <td>
+                    <CompanyToggle id={c.id} active={c.active} secret={secret} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="note">
+          A board deactivates automatically after 5 consecutive failures, which
+          almost always means the token changed. Re-enabling also resets the
+          count — verify the token with{" "}
+          <code>python scripts/verify_boards.py</code> first, or it will trip again.
+        </div>
+      </section>
     </>
   );
 }

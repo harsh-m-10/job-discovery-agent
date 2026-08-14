@@ -21,6 +21,14 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+# LLM output routinely contains en-dashes and non-breaking hyphens. The Windows
+# console defaults to cp1252, which cannot encode them, and an unhandled
+# UnicodeEncodeError at print time would fail a run whose work is already
+# committed to the database.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 import requests
 import yaml
 from dotenv import load_dotenv

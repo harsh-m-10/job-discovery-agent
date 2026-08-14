@@ -5,22 +5,22 @@ import { useState, useTransition } from "react";
 
 const ACTIONS: { status: string; label: string; primary?: boolean }[] = [
   { status: "applied", label: "Applied", primary: true },
-  { status: "skipped", label: "Skipped" },
-  { status: "responded", label: "Got response" },
+  { status: "skipped", label: "Skip" },
+  { status: "responded", label: "Got reply" },
   { status: "interviewing", label: "Interviewing" },
   { status: "rejected", label: "Rejected" },
 ];
 
+/** Used on the job detail page. The queue has its own card-level version that
+ *  also animates the card out of the list. */
 export default function StatusButtons({
   jobId,
   secret,
   current,
-  showReferralToggle = true,
 }: {
   jobId: number;
   secret: string;
   current: string;
-  showReferralToggle?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -37,12 +37,12 @@ export default function StatusButtons({
         headers: { "Content-Type": "application/json", "x-dashboard-secret": secret },
         body: JSON.stringify({ job_id: jobId, status, via_referral: viaReferral }),
       });
-      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-      // Refresh rather than mutate local state: the server owns the frozen
-      // hours_since_posted value, and showing a guess would defeat the point.
+      if (!res.ok) throw new Error(`${res.status}`);
+      // The server owns the frozen hours_since_posted; refresh rather than
+      // render a local guess.
       startTransition(() => router.refresh());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed");
+      setError(err instanceof Error ? `Failed (${err.message})` : "Failed");
     } finally {
       setBusy(null);
     }
@@ -50,7 +50,7 @@ export default function StatusButtons({
 
   return (
     <div>
-      <div className="row" style={{ gap: 6 }}>
+      <div className="actions" style={{ marginTop: 0 }}>
         {ACTIONS.map((action) => (
           <button
             key={action.status}
@@ -61,19 +61,18 @@ export default function StatusButtons({
             {busy === action.status ? "…" : action.label}
           </button>
         ))}
-        {showReferralToggle && (
-          <label className="small muted" style={{ cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={viaReferral}
-              onChange={(e) => setViaReferral(e.target.checked)}
-              style={{ verticalAlign: "middle", marginRight: 4 }}
-            />
-            via referral
-          </label>
-        )}
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={viaReferral}
+            onChange={(e) => setViaReferral(e.target.checked)}
+          />
+          via referral
+        </label>
       </div>
-      {error && <div className="small" style={{ color: "var(--danger)" }}>{error}</div>}
+      {error && (
+        <div style={{ color: "var(--bad)", fontSize: 12, marginTop: 8 }}>{error}</div>
+      )}
     </div>
   );
 }

@@ -129,6 +129,38 @@ export async function getQueue(): Promise<QueueRow[]> {
   return rows;
 }
 
+/**
+ * Header numbers for the queue.
+ *
+ * `unscored` is the important one: an empty queue because nothing scored well
+ * and an empty queue because scoring never finished look identical otherwise,
+ * and the second silently looks like "no jobs today".
+ */
+export async function getQueueMeta() {
+  const [jobs, scores, apps] = await Promise.all([
+    select<{ id: number }>("jobs", "select=id&closed_at=is.null"),
+    select<{ job_id: number; fit_score: number | null }>(
+      "job_scores", "select=job_id,fit_score",
+    ),
+    select<{ applied_at: string | null }>(
+      "applications", "select=applied_at&applied_at=not.is.null",
+    ),
+  ]);
+
+  const scoredIds = new Set(scores.map((s) => s.job_id));
+  const weekAgo = Date.now() - 7 * 86_400_000;
+
+  return {
+    openJobs: jobs.length,
+    unscored: jobs.filter((j) => !scoredIds.has(j.id)).length,
+    llmScored: scores.filter((s) => s.fit_score !== null).length,
+    appliedThisWeek: apps.filter(
+      (a) => a.applied_at && new Date(a.applied_at).getTime() >= weekAgo,
+    ).length,
+    appliedTotal: apps.length,
+  };
+}
+
 export async function getJob(jobId: number) {
   const [jobs, scores, apps, referrals] = await Promise.all([
     select<JobRow & {

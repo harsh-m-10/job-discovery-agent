@@ -20,6 +20,14 @@ import time
 from collections import Counter
 from pathlib import Path
 
+# LLM output routinely contains en-dashes and non-breaking hyphens. The Windows
+# console defaults to cp1252, which cannot encode them, and an unhandled
+# UnicodeEncodeError at print time would fail a run whose work is already
+# committed to the database.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 import yaml
 from dotenv import load_dotenv
 
@@ -89,11 +97,18 @@ def main() -> int:
     ap.add_argument("--retry-failed", action="store_true",
                     help="re-score jobs whose previous scoring attempt errored")
     ap.add_argument("--model", default=DEFAULT_MODEL)
+    ap.add_argument("--batch-size", type=int,
+                    help="override llm_batch_size — needed when falling back to "
+                         "a model with a tighter per-minute cap")
+    ap.add_argument("--char-limit", type=int,
+                    help="override description_char_limit; the system prompt is "
+                         "~2,600 tokens, so on an 8k/min model this is the only "
+                         "lever left once batch size is already 1")
     args = ap.parse_args()
 
     settings = load_settings()
-    batch_size = int(settings.get("llm_batch_size", 8))
-    char_limit = int(settings.get("description_char_limit", 6000))
+    batch_size = args.batch_size or int(settings.get("llm_batch_size", 8))
+    char_limit = args.char_limit or int(settings.get("description_char_limit", 6000))
     max_years = float(settings.get("max_experience_years", 4))
     store = ScoreStore()
 

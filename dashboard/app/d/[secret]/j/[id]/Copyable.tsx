@@ -16,12 +16,14 @@ export default function Copyable({ label, value }: { label: string; value: strin
   }
 
   return (
-    <div style={{ marginBottom: 10 }}>
-      <div className="spread" style={{ alignItems: "center" }}>
-        <span className="muted small">{label}</span>
-        <button onClick={copy}>{copied ? "copied" : "copy"}</button>
+    <div className="copy-row">
+      <div style={{ minWidth: 0 }}>
+        <div className="copy-k">{label}</div>
+        <div className="copy-v">{value}</div>
       </div>
-      <div style={{ marginTop: 2 }}>{value}</div>
+      <button onClick={copy} style={{ flexShrink: 0, minHeight: 34, padding: "6px 12px" }}>
+        {copied ? "copied ✓" : "copy"}
+      </button>
     </div>
   );
 }
