@@ -11,3 +11,15 @@ seeds/verify_report.json
 dashboard/.env.local
 dashboard/.vercel/
 retry.log
+
+# --- PII inputs. The LinkedIn export is first-party personal data about other
+# people; it must never enter version control. Patterns are deliberately broad.
+*LinkedInDataExport*
+*Linkedin*Export*
+Connections.csv
+connections.csv
+*.zip
+*.log
+data/
+exports/
+/*.csv
