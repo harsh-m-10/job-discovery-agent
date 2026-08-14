@@ -1,5 +1,11 @@
 # seeds/headcount.yaml
 #
+# STATUS: SCAFFOLDING. Every board is deliberately left `unknown`.
+# Checked 2026-08-14: none of the 40 currently tracked companies is under 25
+# employees, so the `micro` penalty would not change a single score. The
+# machinery is wired end to end and tested; it simply has nothing to bite on
+# yet. Tag new boards as they are added, especially early-stage startups.
+#
 # Company size, tagged by hand — no ATS exposes headcount.
 #
 #   micro    <25 employees   -> scored -2.0

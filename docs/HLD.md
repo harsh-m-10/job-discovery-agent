@@ -9,17 +9,16 @@ the gap in [Known limitations](#12-known-limitations).
 
 ## 1. What this system is
 
-A single-operator job pipeline. It polls company ATS boards directly every 15
-minutes, normalizes postings, scores them against one person's résumé with an
-LLM, and surfaces the survivors on a private dashboard where applications are
-logged.
+A single-operator job pipeline. It polls company ATS boards on a schedule,
+normalizes postings, scores them against one person's résumé with an LLM, and
+surfaces the survivors on a private dashboard where applications are logged.
 
 It exists to attack three specific bottlenecks:
 
 | Edge | Mechanism | Where it lives |
 |---|---|---|
 | **Inventory** | Poll ATS boards directly; many reqs never syndicate to aggregators | `ingest/adapters/` |
-| **Latency** | 15-minute polling; apply in hour one, not day three | `.github/workflows/ingest.yml` |
+| **Latency** | Polling loop; apply in hour one, not day three. Declared `*/15`, **measured ~53 min** — GitHub deprioritises scheduled runs | `.github/workflows/ingest.yml` |
 | **Referral** | Join postings against the operator's own LinkedIn connections | `score/referral.py` |
 
 A fourth property compounds: **telemetry**. Every application is logged with
@@ -47,7 +46,8 @@ graph TB
         LEVER["Lever<br/>api.lever.co"]
         ASHBY["Ashby<br/>posting-api"]
         WD["Workday CXS<br/>per-tenant"]
-        GROQ["Groq<br/>OpenAI-compatible"]
+        LLM["LLM fleet — 6 live<br/>Google · Mistral · Cloudflare<br/>OpenRouter · NVIDIA<br/>(Groq off · Cerebras 402)"]
+        SMTP["Gmail SMTP<br/>alert delivery"]
     end
 
     subgraph pii["PII, outside the repo"]
@@ -62,12 +62,13 @@ graph TB
     GHA --> LEVER
     GHA --> ASHBY
     GHA --> WD
-    GHA -->|"chat/completions"| GROQ
+    GHA -->|"chat/completions, priority order"| LLM
+    GHA -->|"watchdog alerts"| SMTP
     GHA -->|"service-role key"| SUPA
     VERCEL -->|"service-role key"| SUPA
 
     classDef ext fill:#2b2b2b,stroke:#888,color:#eee
-    class GH_ATS,LEVER,ASHBY,WD,GROQ ext
+    class GH_ATS,LEVER,ASHBY,WD,LLM,SMTP ext
 ```
 
 ### Trust boundaries
@@ -108,14 +109,18 @@ graph LR
         RUN2["run.py"]
     end
 
-    subgraph L3["Delivery"]
-        NOTIFY["notify/<br/>whatsapp·email"]
+    subgraph L3["Delivery + operations"]
+        NOTIFY["notify/<br/>whatsapp · email"]
+        WATCH["notify/watchdog.py<br/>+ alerts.py"]
         DASH["dashboard/<br/>Next.js"]
     end
 
     RUN1 --> AD --> NORM
     RUN1 --> LIFE --> ST1
     RUN2 --> PRE --> LLM --> ST2
+    LLM --> PROV["providers.py<br/>6-vendor failover"]
+    RUN2 --> HC["healthcheck.py"] --> PROV
+    WATCH -.reads run_log.-> ST2
     RUN2 -.reads.-> NORM
     REF --> ST2
     NOTIFY -.reads.-> ST2
@@ -138,7 +143,10 @@ graph LR
 | `ingest/lifecycle.py` | Diff a fetched board against stored state | Perform network or DB I/O (pure functions) |
 | `ingest/store.py` | PostgREST access, **Layer 1 tables only** | Touch `job_scores`/`connections`/`applications` |
 | `score/prefilter.py` | Drop obvious rejects with regex | Call an LLM |
-| `score/llm.py` | Groq batching, pacing, JSON coercion | Generate compensation or notice period |
+| `score/llm.py` | Prompt assembly, batching, JSON coercion, penalties | Generate compensation or notice period |
+| `score/providers.py` | One contract over 6 LLM vendors; pacing, failover, error taxonomy | Hardcode any rate limit — all config |
+| `score/healthcheck.py` | Ping every provider at startup; verify model still exists | Let a run start with nothing usable |
+| `notify/watchdog.py` | Detect silent death; email on 3 conditions | Be imported by Layer 1 |
 | `score/referral.py` | Company-name normalization, contact ranking | Touch the network |
 | `dashboard/` | Read queue, write status | Expose the service key to the client |
 
@@ -276,7 +284,7 @@ graph TB
 
 | Runs where | What | Trigger |
 |---|---|---|
-| GitHub Actions | `ingest.run` → `score.run` → `notify.run` | cron `*/15`, `workflow_dispatch` |
+| GitHub Actions | `ingest.run` → `healthcheck` → `score.run` → `notify.run` → `watchdog` | cron `*/15` declared, ~53 min actual; `workflow_dispatch` |
 | GitHub Actions | tests + boundary check + dry-run ingest | push / PR |
 | GitHub Actions | keepalive commit | weekly cron |
 | Vercel | dashboard SSR + `/api/*` | HTTP request |
@@ -332,16 +340,23 @@ telemetry is measured from.
 | 1 | One board 404s (token changed) | `BoardFetchError`, `consecutive_failures++` | That board only; run continues | Auto-deactivate at 5; `verify_boards.py`; re-enable in dashboard | 1 company |
 | 2 | All boards fail (network/DNS) | `len(errors) == len(due)` → exit 1 | No new jobs | Next cron tick | Whole run |
 | 3 | Supabase unreachable | `RuntimeError` from `_request` | Persist fails per company; fetches wasted | Next tick | Whole run |
-| 4 | Groq per-minute limit | HTTP 429 → `RateLimited` | Batch retried up to 3× with header-driven backoff | Automatic | 1 batch |
-| 5 | Groq **daily** quota | 429 body contains `tokens per day` → `DailyQuotaExhausted` | Run **stops cleanly**, writes nothing for unattempted jobs | Next day, or `--model` with a separate budget | Remaining queue |
+| 4 | One provider rate-limited | HTTP 429 → `RateLimited` | Retried 3× with exponential backoff, then next provider | Automatic | 1 batch |
+| 4b | One provider 5xx / times out | `ServerError` | Retried with backoff, then next provider | Automatic | 1 batch |
+| 4c | One provider out of quota / unpaid | `QuotaExhausted` / `PaymentRequired` | Falls through immediately — waiting cannot help | Automatic | that provider |
+| 5 | **All 6 providers refuse** | `AllProvidersExhausted` | ERROR logged, jobs marked `scoring_failed`, **email alert**, red dashboard banner | `score.run --retry-failed` | Remaining queue |
 | 6 | Groq returns malformed JSON | `parse_scores` raises | Retry once, then `scoring_failed` row | `--retry-failed` | 1 batch |
 | 7 | Request exceeds token budget | HTTP 413 → `RequestTooLarge` | Batch halved recursively, then `char_limit` halved | Automatic | 1 batch |
 | 8 | CallMeBot down | Non-200, or 200 with an HTML error body | Email fallback per job | Next tick retries (no `ok=true` row) | 1 notification |
 | 9 | Dashboard secret leaked | None — no logging or alerting | Full read/write of job data | Rotate `DASHBOARD_SECRET`, redeploy | Entire dataset |
-| 10 | GH Actions disabled at 60d | **None today** | Ingestion silently stops | `keepalive.yml` prevents it | Whole system |
+| 10 | GH Actions disabled at 60d | **watchdog: no new postings in 72h** | Ingestion silently stops | `keepalive.yml` prevents it | Whole system |
+| 11 | Board token rots | `consecutive_failures`, deactivation | That board only | **email alert**, then `verify_boards.py` | 1 company |
+| 12 | Configured model retired by vendor | `healthcheck` model-availability check, ERROR | Provider skipped, chain continues | Update `settings.yaml` | 1 provider |
 
-**#5 and #10 are the two that matter most.** Both are silent. #5 now stops
-cleanly and reports; #10 is prevented but not *detected* — see [§12](#12-known-limitations).
+**#5 and #10 were the two that mattered most, because both were silent.** Both
+are now instrumented: #5 logs ERROR, marks the jobs, emails, and raises a
+dashboard banner; #10 is both prevented (`keepalive.yml`) and detected (the
+watchdog's 72h dry-pipeline check). `notify/watchdog.py` runs with
+`if: always()`, so it fires precisely when an earlier step has failed.
 
 ---
 
@@ -351,16 +366,19 @@ cleanly and reports; #10 is prevented but not *detected* — see [§12](#12-know
 |---|---|---|---|---|
 | **O(boards)** | 1–2 HTTP req/board/run; Workday is 1 + N_india | 40 boards, ~102s | ~200 boards | GH Actions 2,000 min/mo on private repos |
 | **O(jobs)** | `existing_jobs()` per company; PostgREST paginates at 1,000 | 837 open | ~100k | Supabase free tier 500 MB (`description` dominates) |
-| **O(scored)** | ~1,400 tokens/job | 36 scored | **~70 jobs/day** | **Groq free tier: 100,000 tokens/day/model** |
+| **O(scored)** | ~1,400 tokens/job | 84 scored | **several hundred/day** | Sum of 6 independent free tiers; no single vendor is the ceiling any more |
 | **O(users)** | N/A | 1 | 1 | Architectural — no auth, no tenancy |
 | Dashboard read | O(jobs + scores + apps) in Node per request | ~800 rows | ~20k rows | Serverless memory / response time |
 
-**The real ceiling is Groq's daily token quota, not boards or jobs.** At ~1,400
-tokens per job, 100k tokens/day scores roughly 70 jobs. This was hit repeatedly
-in practice. Mitigations in order of cost: the prefilter (drops ~93% before any
-LLM call), per-model budgets (`--model` selects a separate 100k allowance), and
-the ~2,600-token system prompt, which is the single largest lever left since it
-is resent with every batch.
+**The scoring ceiling used to be a single vendor's daily quota and no longer
+is.** Groq's 100k tokens/day capped throughput at ~70 jobs and was hit
+repeatedly — badly enough to strand scores mid-run. Six independent free tiers
+now sit behind one interface, and the prefilter still drops ~93% before any LLM
+call, so the practical limit is well above current volume.
+
+The real ceiling today is **GitHub Actions scheduling**, not tokens: the cron
+fires roughly hourly rather than every 15 minutes (see the README), so latency
+— not capacity — is what bounds the system.
 
 ---
 
@@ -444,29 +462,34 @@ Stated plainly rather than papered over.
 2. **Referral data never reaches the ping.** `notify/run.py` hardcodes
    `"referrals": []` with a `# populated in phase 5` comment. Connections are now
    imported and the dashboard shows them, but the WhatsApp message does not.
-   Spec §8.1 wants contacts in the ping; the code does not do it.
+   Spec §8.1 wants contacts in the ping; the code does not do it. *(Notification
+   is parked at the operator's request — WhatsApp is not set up at all.)*
 3. **Artifact generation (spec §7.4) is not built.** No referral DM generation,
    and screening answers are static values from `candidate_profile.yaml` rather
    than adapted per JD. `applications.referral_contact_id` exists in the schema
    and nothing ever writes it.
 4. **The daily 8pm digest email (spec §8.2) does not exist.** Only the
    per-job failure fallback is implemented.
-5. **No failure alerting.** Nothing detects "zero new postings across all boards
-   for 72h" or an errored run. Given that the two worst failure modes are silent,
-   this is the most valuable missing piece.
-6. **Production cron is not yet running.** `ingest.yml` exists and is correct, but
-   `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, and `GROQ_API_KEY` have not been added
-   to GitHub Actions secrets, and no scheduled run has been confirmed against prod.
-   Everything to date has run from a laptop.
+5. ~~No failure alerting.~~ **Resolved.** `notify/watchdog.py` emails via Gmail
+   SMTP on board errors, a 72h dry pipeline, and stranded jobs. Delivery verified
+   end to end.
+6. ~~Production cron is not yet running.~~ **Resolved.** All secrets set;
+   green runs confirmed against prod Supabase. Note the measured cadence is
+   ~53 minutes, not the declared 15 — see the README.
 7. **`is_india_relevant` keeps postings with an empty location string.** A board
    that omits location entirely would flood the pipeline. No board currently does.
 8. **The SmartRecruiters adapter is confirmed viable but unbuilt.** The public
    endpoint was verified (BoschGroup returns 4,810 postings, no auth).
-9. **Score mixing across models.** `job_scores.model` records which model scored
-   each row, but the queue ranks them together. `gpt-oss-120b` and
-   `llama-3.3-70b` are not guaranteed to be calibrated identically.
-10. **Mobile layout is unverified.** The CSS has a `max-width: 760px` block, but
+9. **Score mixing across providers.** `job_scores.provider` and `.model` record
+   the origin, but the queue ranks all rows together and six vendors are not
+   guaranteed to be calibrated identically. In practice one provider scores a
+   whole run, so mixing is rare — but it is not prevented.
+10. **`companies.headcount_band` is scaffolding.** Wired end to end and tested,
+   but every one of the 40 boards is `unknown`: none is under 25 employees, so
+   the `micro` penalty has nothing to bite on. Deliberate, not forgotten.
+11. **Mobile layout is unverified.** The CSS has a `max-width: 760px` block, but
     the browser tool would not honour a resize, so phone rendering has not
     actually been seen — only reasoned about.
-11. **No database migrations beyond `0001_init.sql`.** Schema changes are applied
-    by hand in the Supabase SQL editor; there is no migration runner or version table.
+12. **No migration runner.** `0001_init.sql` and `0002_provider_and_headcount.sql`
+    are applied by hand (0002 via the ap-south-1 pooler — the direct DB host does
+    not resolve from every network). There is no version table and no rollback.

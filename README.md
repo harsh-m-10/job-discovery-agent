@@ -171,6 +171,33 @@ python -m notify.watchdog --dry-run   # is the pipeline actually flowing
 python -m notify.watchdog --test      # prove the alert email path works
 ```
 
+## Polling cadence — measured, not configured
+
+`ingest.yml` declares `cron: "*/15 * * * *"`. **That is not what happens.**
+GitHub deprioritises scheduled workflows on free and private repos. Gaps
+measured on this repo over one evening:
+
+```
+18:40 -> 19:44   64 min      21:21 -> 22:10   49 min
+19:44 -> 20:23   39 min      22:10 -> 23:03   52 min
+20:23 -> 21:21   57 min      23:03 -> 23:58   54 min
+                             23:58 -> 02:35  156 min
+```
+
+**Measured polling cadence: ~53 minutes average, worst observed 2h36m.**
+
+This matters because the latency edge is one of the three things the system
+exists to buy. ~53 minutes still beats aggregators that refresh daily, so the
+edge is real — it is just smaller than "*/15" implies. Do not quote 15 minutes
+anywhere.
+
+**Documented fix, deliberately not implemented:** point an external pinger
+(cron-job.org, or a Vercel cron) at the GitHub `workflow_dispatch` API on a
+real 15-minute schedule. Manual dispatches are not deprioritised the way
+`schedule` events are. This is worth doing **only if** the funnel's apply-latency
+breakdown eventually shows that speed converts — until there is application
+data, it is optimisation without evidence.
+
 ## Alerting
 
 `notify/watchdog.py` runs after every ingestion and emails on three conditions,

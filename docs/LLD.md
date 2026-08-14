@@ -18,7 +18,11 @@ collected in [§11](#11-known-limitations).
 | `ingest/adapters/` | `get_adapter(ats)`, 4 adapters | `http`, `models`, `normalize` |
 | `ingest/run.py` | `main()`, `is_due`, `fetch_board` | all of the above |
 | `score/prefilter.py` | `prefilter`, `check_title`, `extract_experience`, `Prefiltered` | — |
-| `score/llm.py` | `score_batch`, `build_system_prompt`, `parse_scores`, `normalize_entry`, `_Pacer`, 4 exception classes | `ingest.normalize` |
+| `score/llm.py` | `score_batch`, `build_system_prompt`, `parse_scores`, `normalize_entry`, `verdict_for`, `apply_headcount_penalty`, `AllProvidersExhausted` | `ingest.normalize`, `score.providers` |
+| `score/providers.py` | `ChatProvider`, `ProviderConfig`, `Pacer`, `build_providers`, 6 exception classes | — |
+| `score/healthcheck.py` | `check`, `run`, `Health` | `score.providers` |
+| `notify/alerts.py` | `send_alert`, `alert_ingest_errors`, `alert_providers_exhausted`, `check_pipeline_dry` | `notify.email` |
+| `notify/watchdog.py` | `main`, `latest_run`, `stranded_jobs` | `notify.alerts` |
 | `score/referral.py` | `normalize_company`, `match_company`, `rank_matches`, `Contact`, `Match` | `rapidfuzz` (optional) |
 | `score/store.py` | `ScoreStore` | — |
 | `score/run.py` | `main()`, `persist()` | all Layer 2 + `ingest.normalize` |
@@ -103,6 +107,93 @@ Three details that are easy to get wrong:
 
 ---
 
+## 2b. Provider abstraction
+
+Six vendors behind one contract. All expose an OpenAI-compatible
+`/chat/completions`, so vendor differences reduce to configuration —
+`score/providers.py` hardcodes **no** rate limit.
+
+```mermaid
+classDiagram
+    class ProviderConfig {
+        +str name
+        +str model
+        +str base_url
+        +str api_key_env
+        +int priority
+        +int rpm
+        +int tpm
+        +int batch_size
+        +int max_chars
+        +bool json_mode
+        +bool enabled
+        +int timeout
+    }
+    class ChatProvider {
+        +ProviderConfig cfg
+        +Pacer pacer
+        +available() bool
+        -_base_url() str
+        +complete(system, user, max_output) str
+    }
+    class Pacer {
+        -float _last_call
+        +float|None remaining_tokens
+        +before(estimated_tokens)
+        +after(headers)
+    }
+    class ProviderError {
+        <<exception>>
+    }
+    ChatProvider --> ProviderConfig
+    ChatProvider --> Pacer
+    ProviderError <|-- RequestTooLarge
+    ProviderError <|-- RateLimited
+    ProviderError <|-- QuotaExhausted
+    ProviderError <|-- ServerError
+    ProviderError <|-- PaymentRequired
+    ProviderError <|-- NotConfigured
+```
+
+### Chain as configured
+
+| # | provider | model | measured on an 8,040-token payload |
+|---|---|---|---|
+| 1 | google | `gemini-flash-lite-latest` | 3.7s |
+| 2 | mistral | `mistral-small-latest` | 4.5s |
+| 3 | google-flash3 | `gemini-3-flash-preview` | 10.7s |
+| 4 | cloudflare | `@cf/openai/gpt-oss-120b` | 13.3s |
+| 5 | openrouter | `nvidia/nemotron-3-super-120b-a12b:free` | 15.0s |
+| 6 | nvidia | `openai/gpt-oss-120b` | 20.3s |
+| 7 | groq | `llama-3.3-70b-versatile` | `enabled: false` — account shared with another project |
+| 8 | cerebras | `gpt-oss-120b` | 402 payment required |
+
+`base_url` supports `${VAR}` expansion (`ChatProvider._base_url`) because
+Cloudflare carries the account id in the path, and an account id does not belong
+in committed config. `available()` returns False when such a variable is missing,
+however valid the API key is.
+
+### Error taxonomy — the distinction that matters
+
+Every vendor signals the same conditions differently, and **the status code
+alone is not enough**; the body has to be read:
+
+| condition | detection | in-place recovery | then |
+|---|---|---|---|
+| `RequestTooLarge` | 413, or 429/400 whose body matches `TOO_LARGE_MARKERS` | split batch, halve `char_limit` | next provider |
+| `RateLimited` | 429, no daily marker | sleep `retry_after × 2^attempt`, 3 tries | next provider |
+| `QuotaExhausted` | 429 whose body matches `DAILY_MARKERS` | none — waiting cannot help | next provider immediately |
+| `ServerError` | 5xx, `requests.Timeout`, `ConnectionError` | sleep `4 × 2^attempt`, 3 tries | next provider |
+| `PaymentRequired` | 402 | none | next provider |
+| `NotConfigured` | missing key or missing `${VAR}` | none | next provider |
+
+`_retry_hint_seconds` parses both dialects — Groq writes
+`"Please try again in 33m40.032s"`, Google returns `retryDelay: "27s"`. Reading
+the per-minute reset *header* instead of the body is what once burned an entire
+daily budget in minutes.
+
+---
+
 ## 3. Schema
 
 ```mermaid
@@ -120,6 +211,7 @@ erDiagram
         text board_token "UNIQUE(ats, board_token)"
         text category
         int priority "1=every run 2=hourly 3=daily"
+        text headcount_band "micro|small|mid|large|unknown — hand-seeded"
         boolean active "false after 5 failures"
         timestamptz last_ok_at "NULL until first success"
         int consecutive_failures
@@ -151,7 +243,8 @@ erDiagram
         text reasoning
         text verdict "CHECK strong|worth_trying|stretch|reject"
         text reject_reason "set when LLM was skipped"
-        text model "'prefilter' or a Groq model id"
+        text model "'prefilter' or a vendor model id"
+        text provider "google|mistral|cloudflare|openrouter|nvidia|prefilter"
         timestamptz scored_at
     }
     applications {
@@ -444,44 +537,49 @@ if char_limit > 1200:
 
 ## 6. Sequence diagrams
 
-### 6.1 Scoring batch with 413 backoff
+### 6.1 Scoring batch with provider failover
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant RUN as score/run.py
+    participant HC as healthcheck
     participant SB as score_batch
-    participant P as _Pacer
-    participant G as Groq
+    participant P1 as provider[i]
     participant DB as Supabase
 
-    RUN->>RUN: prefilter() every open unscored job
+    RUN->>HC: run(providers, fail_fast=True)
+    HC->>P1: minimal completion per provider
+    alt none live
+        HC-->>RUN: RuntimeError → exit 2
+    end
+    HC-->>RUN: live set (unhealthy providers dropped)
+    RUN->>RUN: prefilter every open unscored job
     RUN->>DB: upsert prefilter rejects (fit_score NULL)
-    loop each batch of llm_batch_size
-        RUN->>SB: score_batch(batch, model, char_limit)
-        SB->>P: wait_for(estimated_tokens)
-        alt remaining < needed
-            P->>P: sleep(reset_after + 1, max 65s)
+
+    loop each batch
+        RUN->>SB: score_batch(batch, providers)
+        loop providers in priority order
+            SB->>P1: complete(system, user, max_output)
+            alt RequestTooLarge
+                SB->>SB: split batch / halve char_limit, retry
+            else RateLimited or ServerError
+                SB->>SB: sleep(backoff × 2^attempt), 3 tries
+            else QuotaExhausted / PaymentRequired
+                SB->>SB: no wait — next provider
+            else 200
+                SB->>SB: parse_scores → normalize_entry(provider, model)
+            end
         end
-        SB->>G: POST /chat/completions
-        alt 413 or "Request too large"
-            G-->>SB: RequestTooLarge
-            SB->>SB: split batch in half, recurse
-        else 429 tokens-per-day
-            G-->>SB: DailyQuotaExhausted
-            SB-->>RUN: raise (no rows written)
-            RUN->>RUN: break — jobs stay unscored, not marked failed
-        else 429 per-minute
-            G-->>SB: RateLimited(retry_after)
-            SB->>SB: sleep, retry (3 attempts)
-        else 200
-            G-->>SB: JSON
-            SB->>SB: parse_scores → strip fences
-            SB->>SB: normalize_entry → recompute verdict from score
+        alt every provider refused
+            SB-->>RUN: AllProvidersExhausted
+            RUN->>RUN: log ERROR
+            RUN->>DB: mark remaining scoring_failed:providers_exhausted
+            RUN->>RUN: alert_providers_exhausted() → email
+            RUN->>RUN: break
         end
-        SB-->>RUN: rows
-        RUN->>RUN: persist() — never overwrite a numeric score with a failure
-        RUN->>DB: upsert job_scores
+        RUN->>RUN: apply_headcount_penalty(row, band) → re-derive verdict
+        RUN->>DB: persist() — never overwrite a numeric score with a failure
     end
 ```
 
@@ -576,6 +674,10 @@ sequenceDiagram
 | 9 | `verdict` is always consistent with `fit_score` | `normalize_entry` recomputes it, ignoring the model's own verdict |
 | 10 | PII is never read from inside the repo | `resolve_csv_path`; `test_path_inside_the_repo_is_refused` |
 | 11 | The service key never reaches the browser | `server-only` import; verified with a planted client import |
+| 12 | A run never starts with zero usable providers | `healthcheck.run(fail_fast=True)` → exit 2 |
+| 13 | Provider exhaustion is never silent | ERROR log + `scoring_failed` rows + email alert + dashboard banner |
+| 14 | Alerts do not spam | `notifications` rows keyed by synthetic negative job_id, per-kind cooldown |
+| 15 | A headcount penalty moves `fit_score` by exactly the configured delta | `apply_headcount_penalty`, tested at bounds |
 
 ---
 
@@ -587,7 +689,13 @@ sequenceDiagram
 |---|---|---|---|
 | `SUPABASE_URL` | URL | — | Everything fails at startup |
 | `SUPABASE_SERVICE_KEY` | JWT | — | Total DB compromise if leaked |
-| `GROQ_API_KEY` | string | — | Scoring stops; ingestion unaffected |
+| `GOOGLE_API_KEY` | string | — | Loses providers 1 and 3 — the two fastest |
+| `MISTRAL_API_KEY` | string | — | Loses provider 2 |
+| `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` | string | — | Loses provider 4; the account id is expanded into `base_url` |
+| `OPENROUTER_API_KEY` | string | — | Loses provider 5 |
+| `NVIDIA_API_KEY` | string | — | Loses provider 6 |
+| `GROQ_API_KEY` | string | — | Currently unused — `enabled: false` |
+| `SMTP_HOST/PORT/USER/PASS`, `ALERT_EMAIL_TO/FROM` | string | gmail:587 | **No alerting at all** — every silent failure stays silent |
 | `DASHBOARD_SECRET` | 32-char hex | — | **Dashboard fully public if empty** — middleware returns 404 for all, so an empty value locks *you* out rather than opening it |
 | `CONNECTIONS_CSV_PATH` | path | `~/.job-agent/private/**/Connections.csv` | Refuses to run if inside repo |
 | `PING_THRESHOLD` (Vercel) | float | `6.5` | Too low floods the queue; too high hides jobs |
@@ -602,8 +710,10 @@ sequenceDiagram
 |---|---|---|
 | `ping_threshold` | `6.5` | Queue inclusion cutoff |
 | `poll_interval_minutes` | `15` | Documentation only — the cron in `ingest.yml` is authoritative |
-| `llm_batch_size` | `3` | Too high → 413 and split-retries |
-| `description_char_limit` | `2000` | Too high → 413; too low → the model can't see requirements |
+| `llm_providers[]` | 8 entries | The whole scoring chain. Each carries its own `rpm`/`tpm`/`batch_size`/`max_chars`/`timeout`/`enabled`; nothing is hardcoded |
+| `headcount_penalties` | `micro: -2.0`, rest `0.0` | Applied in code after scoring, then the verdict is re-derived |
+| `llm_batch_size` | `4` | Fallback only — a provider's own `batch_size` wins |
+| `description_char_limit` | `2600` | Fallback only — a provider's own `max_chars` wins |
 | `max_experience_years` | `4` | The core hypothesis knob |
 | `location_keywords` | list | **Currently unused** — `normalize.py` hardcodes its own regex |
 | `fetch_concurrency` | `8` | Higher risks ATS blocking |
@@ -676,7 +786,13 @@ Worked example: SmartRecruiters, whose public API is already confirmed
    it falls back to `bulletFields[0]` and then the URL path tail; a tenant
    changing its URL shape would orphan every stored row for that board and
    present them as new.
-9. **`_pacer` is module-global mutable state.** Fine single-threaded; wrong if
-   scoring is ever parallelised.
+9. **Each provider owns a `Pacer` instance**, mutated in place. Fine
+   single-threaded; wrong if scoring is ever parallelised across threads.
 10. **No test covers `ingest/store.py` or `score/store.py`** — every PostgREST
     interaction is exercised only through live runs.
+11. **`healthcheck` costs one live completion per provider per run.** Eight
+    providers means eight extra calls before any scoring; cheap on free tiers,
+    but it is not free.
+12. **Alert cooldowns live in code**, not config (`notify/alerts.py:COOLDOWN_HOURS`).
+13. **`companies.headcount_band` is scaffolding** — all 40 boards are `unknown`
+    because none is under 25 employees, so the penalty never fires today.
