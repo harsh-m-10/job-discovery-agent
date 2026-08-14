@@ -140,8 +140,8 @@ export async function getQueue(): Promise<QueueRow[]> {
 export async function getQueueMeta() {
   const [jobs, scores, apps] = await Promise.all([
     select<{ id: number }>("jobs", "select=id&closed_at=is.null"),
-    select<{ job_id: number; fit_score: number | null }>(
-      "job_scores", "select=job_id,fit_score",
+    select<{ job_id: number; fit_score: number | null; reject_reason: string | null }>(
+      "job_scores", "select=job_id,fit_score,reject_reason",
     ),
     select<{ applied_at: string | null }>(
       "applications", "select=applied_at&applied_at=not.is.null",
@@ -154,6 +154,10 @@ export async function getQueueMeta() {
   return {
     openJobs: jobs.length,
     unscored: jobs.filter((j) => !scoredIds.has(j.id)).length,
+    // Jobs the LLM never got to because every provider refused. Distinct from
+    // "not scored yet": these will not be retried by an ordinary run.
+    stranded: scores.filter((s) =>
+      (s.reject_reason ?? "").startsWith("scoring_failed")).length,
     llmScored: scores.filter((s) => s.fit_score !== null).length,
     appliedThisWeek: apps.filter(
       (a) => a.applied_at && new Date(a.applied_at).getTime() >= weekAgo,

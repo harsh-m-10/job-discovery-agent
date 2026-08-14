@@ -15,6 +15,7 @@ twice, and the funnel view can account for every job the system ever saw.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from collections import Counter
@@ -39,8 +40,13 @@ from ingest.normalize import is_india_relevant   # noqa: E402
 from score.llm import (AllProvidersExhausted, ScoringError,  # noqa: E402
                        apply_headcount_penalty, build_system_prompt,
                        default_providers, score_batch)
+from score import healthcheck                    # noqa: E402
 from score.prefilter import prefilter            # noqa: E402
 from score.store import ScoreStore               # noqa: E402
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(levelname)s %(name)s: %(message)s")
+log = logging.getLogger("score.run")
 
 SETTINGS = ROOT / "config" / "settings.yaml"
 
@@ -116,11 +122,22 @@ def main() -> int:
     if args.provider:
         providers = [p for p in providers if p.name == args.provider]
     configured = [p for p in providers if p.available()]
-    print("providers: " + ", ".join(
-        f"{p.name}({'ready' if p.available() else 'no key'})" for p in providers))
-    if not configured and not args.prefilter_only:
-        print("\nNo provider has an API key set. Expected one of: "
-              + ", ".join(p.cfg.api_key_env for p in providers), file=sys.stderr)
+    if not args.prefilter_only and not args.report:
+        # Ping every provider before committing to a run. A dead key or an
+        # unpaid account makes a three-deep chain one-deep, and finding that
+        # out after the lead provider hits its cap wastes the whole window.
+        try:
+            results = healthcheck.run(providers, fail_fast=True)
+        except RuntimeError as exc:
+            log.error("%s", exc)
+            print(f"\n{exc}", file=sys.stderr)
+            return 2
+        healthy = {h.name for h in results if h.live}
+        configured = [p for p in configured if p.name in healthy]
+    else:
+        print("providers: " + ", ".join(
+            f"{p.name}({'ready' if p.available() else 'off'})" for p in providers))
+    if not configured and not args.prefilter_only and not args.report:
         return 2
 
     # Batch size and char limit follow the first ready provider unless overridden;
@@ -223,11 +240,25 @@ def main() -> int:
                         or {}).get("headcount_band")
                 apply_headcount_penalty(row, band, penalties)
         except AllProvidersExhausted as exc:
-            remaining = len(survivors) - i
-            print("\nStopping: every configured provider refused.")
+            stranded = survivors[i:]
+            log.error("ALL PROVIDERS EXHAUSTED after %d of %d job(s): %s",
+                      i, len(survivors), exc)
+            print("\nERROR: every configured provider refused.")
             print(f"  {exc}")
-            print(f"  {remaining} job(s) left unscored and unmarked — they stay "
-                  f"in the normal queue and are picked up by the next run.")
+            # Marked, not left silent. An unmarked job is indistinguishable
+            # from one that was never ingested, and the dashboard banner counts
+            # these so the failure is visible rather than looking like a quiet
+            # week. `--retry-failed` is the recovery path.
+            persist([{"job_id": j["id"], "fit_score": None, "verdict": "reject",
+                      "reject_reason": "scoring_failed:providers_exhausted",
+                      "model": "", "provider": ""} for j in stranded])
+            print(f"  {len(stranded)} job(s) marked scoring_failed — recover "
+                  f"with: python -m score.run --retry-failed")
+            try:
+                from notify.alerts import alert_providers_exhausted
+                alert_providers_exhausted(str(exc)[:400], len(stranded))
+            except Exception as alert_exc:
+                log.error("could not send exhaustion alert: %s", alert_exc)
             break
         except ScoringError as exc:
             print(f"  batch {i // batch_size + 1}: {exc}")

@@ -59,6 +59,22 @@ export default async function QueuePage({
         </div>
       )}
 
+      {meta.stranded > 0 && (
+        <div className="banner" data-kind="error">
+          <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <path d="M12 9v4M12 17v.01" />
+            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+          </svg>
+          <div>
+            <b>{meta.stranded} job(s) failed to score — every LLM provider refused.</b>{" "}
+            These are not in the queue and an ordinary run will not pick them up.
+            Check provider health with <code>python -m score.healthcheck</code>,
+            then recover with <code>python -m score.run --retry-failed</code>.
+          </div>
+        </div>
+      )}
+
       {jobs.length === 0 ? (
         <div className="empty">
           <div className="big">◦</div>

@@ -242,7 +242,11 @@ class ChatProvider:
 
         try:
             data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            # `.get` not `[...]`: a reply truncated by max_tokens comes back as
+            # a valid envelope with finish_reason="length" and no content key.
+            # That is a live provider, not a broken one — the caller decides
+            # whether an empty completion is usable.
+            return data["choices"][0]["message"].get("content") or ""
         except (ValueError, KeyError, IndexError) as exc:
             raise ProviderError(f"unparseable envelope: {body}") from exc
 

@@ -515,3 +515,12 @@ pre.jd {
   .btn-confirm { width: 100%; min-height: 48px; }
   .after-apply-more button { flex: 1 1 45%; }
 }
+
+
+/* Error banner: a failed scoring pass must not look like the informational
+   "still scoring" state, or a dead pipeline reads as a quiet week. */
+.banner[data-kind="error"] {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}
+.banner[data-kind="error"] .banner-icon { color: var(--bad); }
