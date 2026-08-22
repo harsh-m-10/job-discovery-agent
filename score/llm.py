@@ -1,7 +1,8 @@
 """LAYER 2, stage 2 — batch scoring across multiple LLM providers.
 
-The prompt is assembled from config/candidate_profile.yaml so that resume facts
-and calibration rules live in one operator-editable file, never in code. The
+The prompt is assembled from the candidate profile (see `profile_path`) so that
+resume facts and calibration rules live in one operator-editable file that is
+kept out of version control, never in code. The
 `scoring_rules` block is injected verbatim: it is the only lever that controls
 score inflation, and paraphrasing it in code would let the two drift apart.
 
@@ -17,6 +18,7 @@ prompt, the batching, and turning a model's reply into a job_scores row.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -29,6 +31,13 @@ from .providers import (ChatProvider, NotConfigured, PaymentRequired,
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT_FILE = ROOT / "score" / "prompts" / "scoring.txt"
+
+#: The profile carries compensation, employer and education facts, so it is
+#: deliberately absent from version control — this repository is public. CI
+#: decodes CANDIDATE_PROFILE_B64 to a temp file and sets CANDIDATE_PROFILE_PATH;
+#: locally the file sits beside the LinkedIn export under ~/.job-agent/private.
+#: The in-repo path stays last so a local copy there still resolves.
+PRIVATE_PROFILE = Path.home() / ".job-agent" / "private" / "candidate_profile.yaml"
 PROFILE_FILE = ROOT / "config" / "candidate_profile.yaml"
 
 FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.I | re.M)
@@ -46,8 +55,32 @@ class AllProvidersExhausted(ScoringError):
     """Every configured provider refused. Callers must stop, not retry."""
 
 
+class ProfileMissing(ScoringError):
+    """No candidate profile on disk. Scoring cannot run without one."""
+
+
+def profile_path() -> Path:
+    """First readable profile, in precedence order.
+
+    Fails loudly rather than scoring against an empty profile: a silent
+    fallback would send every job to the model with no resume facts and quietly
+    produce meaningless scores.
+    """
+    override = os.environ.get("CANDIDATE_PROFILE_PATH")
+    candidates = ([Path(override)] if override else []) + [PRIVATE_PROFILE,
+                                                           PROFILE_FILE]
+    for path in candidates:
+        if path.is_file():
+            return path
+    raise ProfileMissing(
+        "no candidate profile found. Looked in: "
+        + ", ".join(str(p) for p in candidates)
+        + f". Copy config/candidate_profile.example.yaml to {PRIVATE_PROFILE} "
+        "and fill it in, or set CANDIDATE_PROFILE_PATH.")
+
+
 def load_profile() -> dict:
-    with PROFILE_FILE.open(encoding="utf-8") as fh:
+    with profile_path().open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 

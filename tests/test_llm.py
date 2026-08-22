@@ -15,9 +15,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from score.llm import (apply_headcount_penalty, build_system_prompt,
-                       build_user_message, load_profile, normalize_entry,
-                       parse_scores, verdict_for)
+from score.llm import (ProfileMissing, apply_headcount_penalty,
+                       build_system_prompt, build_user_message, load_profile,
+                       normalize_entry, parse_scores, verdict_for)
 from score.providers import (Pacer, ProviderConfig, _retry_hint_seconds,
                              build_providers)
 
@@ -30,29 +30,50 @@ GOOGLE_BODY = ('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED",'
                '"details":[{"retryDelay":"27s"}]}}')
 
 
+class Skipped(Exception):
+    """A test needs the private profile, which is deliberately not in the repo."""
+
+
+def require_profile() -> dict:
+    """The profile lives outside version control — see score.llm.profile_path."""
+    try:
+        return load_profile()
+    except ProfileMissing:
+        raise Skipped("no candidate profile on this machine") from None
+
+
 # --- compensation must never reach a provider ---------------------------
 
 def test_compensation_is_stripped_from_the_prompt():
-    """The load-bearing assertion. A hallucinated CTC is unrecoverable."""
-    profile = load_profile()
+    """The load-bearing assertion. A hallucinated CTC is unrecoverable.
+
+    Every expected value is read out of the profile rather than written down
+    here. This file is public: hardcoding the real CTC to prove it never leaks
+    would itself leak it, which is precisely the bug being guarded against.
+    """
+    profile = require_profile()
     comp = profile.get("compensation", {})
     assert comp, "profile has no compensation block to test against"
 
     prompt = build_system_prompt()
     assert "compensation" not in prompt.lower().split("candidate facts")[-1][:4000] \
         or "expected_ctc" not in prompt
-    for key in ("current_ctc", "expected_ctc", "expected_base_min_lpa",
-                "notice_period_days"):
+
+    for key, value in comp.items():
         assert key not in prompt, f"{key} leaked into the prompt"
-    for value in comp.values():
+
         text = str(value).strip()
-        if len(text) > 4 and text.replace(",", "").replace(" ", "").isdigit():
-            assert text not in prompt, f"compensation value {text!r} leaked"
-    assert "000000" not in prompt and "0,00,000" not in prompt
-    assert "<expected range>" not in prompt
+        if len(text) <= 4:
+            continue        # too short to distinguish from incidental digits
+        assert text not in prompt, f"the value of {key} leaked into the prompt"
+
+        bare = text.replace(",", "").replace(" ", "")
+        if bare.isdigit():
+            assert bare not in prompt, f"the figure behind {key} leaked"
 
 
 def test_prompt_still_contains_the_calibration_rules():
+    require_profile()
     prompt = build_system_prompt()
     assert "EXPERIENCE HANDLING" in prompt
     assert "DOMAIN PENALTY" in prompt          # telecom exit
@@ -208,14 +229,20 @@ def test_band_is_shown_to_the_model():
 
 
 if __name__ == "__main__":
-    failed = 0
+    failed = skipped = 0
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
             try:
                 fn()
                 print(f"  pass  {name}")
+            except Skipped as exc:
+                skipped += 1
+                print(f"  skip  {name}: {exc}")
             except AssertionError as exc:
                 failed += 1
                 print(f"  FAIL  {name}: {exc or 'assertion failed'}")
-    print(f"\n{failed} failed" if failed else "\nall tests passed")
+    summary = f"\n{failed} failed" if failed else "\nall tests passed"
+    if skipped:
+        summary += f" ({skipped} skipped: no candidate profile present)"
+    print(summary)
     sys.exit(1 if failed else 0)

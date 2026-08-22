@@ -4,7 +4,7 @@ import { getJob } from "@/lib/queries";
 import { effectivePostedAt, formatAge, hoursSince } from "@/lib/db";
 import StatusButtons from "../../StatusButtons";
 import Copyable from "./Copyable";
-import screening from "@/lib/screening.generated.json";
+import { screening as loadScreening } from "@/lib/screening";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,7 @@ export default async function JobPage({
   if (!data) notFound();
   const { job, score, application, referrals } = data;
 
+  const screening = loadScreening();
   const ageHours = hoursSince(effectivePostedAt(job));
   const heat = ageHours < 6 ? "hot" : ageHours < 24 ? "warm" : ageHours < 48 ? "cool" : "cold";
   const company = job.companies?.name ?? "";
@@ -143,17 +144,26 @@ export default async function JobPage({
 
           <section className="panel">
             <div className="panel-title">Screening answers</div>
-            <Copyable label="NOTICE PERIOD" value={`${screening.notice_period_days} days`} />
-            <Copyable label="CURRENT CTC" value={String(screening.current_ctc)} />
-            <Copyable label="EXPECTED CTC" value={String(screening.expected_ctc)} />
-            <Copyable label="LOCATION" value={String(screening.location_preference)} />
-            <Copyable
-              label="TOTAL EXPERIENCE"
-              value={`${screening.years_experience_post_grad} years post-graduation (${screening.years_experience_incl_internship} including an 8-month full-time internship)`}
-            />
-            <div className="note">
-              Read verbatim from candidate_profile.yaml. Never LLM-generated.
-            </div>
+            {screening ? (
+              <>
+                <Copyable label="NOTICE PERIOD" value={`${screening.notice_period_days} days`} />
+                <Copyable label="CURRENT CTC" value={String(screening.current_ctc)} />
+                <Copyable label="EXPECTED CTC" value={String(screening.expected_ctc)} />
+                <Copyable label="LOCATION" value={String(screening.location_preference)} />
+                <Copyable
+                  label="TOTAL EXPERIENCE"
+                  value={`${screening.years_experience_post_grad} years post-graduation (${screening.years_experience_incl_internship} including an 8-month full-time internship)`}
+                />
+                <div className="note">
+                  Read verbatim from the candidate profile. Never LLM-generated.
+                </div>
+              </>
+            ) : (
+              <div className="note">
+                Not configured. Run <code>python scripts/sync_screening.py</code> and set
+                SCREENING_JSON in the deployment environment.
+              </div>
+            )}
           </section>
         </div>
       </div>

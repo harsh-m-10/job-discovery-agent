@@ -70,18 +70,61 @@ score/      LAYER 2 — single-operator personalization (phase 2)
 notify/     delivery (phase 3)
 scripts/    verify_boards, find_token, check_boundaries
 db/         SQL migrations
-config/     candidate_profile.yaml (resume facts, calibration rules,
-            compensation) and settings.yaml (thresholds)
+config/     candidate_profile.example.yaml (template; the real profile lives
+            outside this repo) and settings.yaml (thresholds)
 seeds/      companies.yaml (hand-maintained) -> companies.verified.yaml (generated)
 tests/
 ```
 
-`config/candidate_profile.yaml` is the single source of truth for both scoring
-and screening answers. Its `scoring_rules` block is injected verbatim into the
-prompt — it is the only lever controlling score inflation, so tune calibration
-there, not in code. Its `compensation` block is stripped out before the prompt
-is built and never reaches a model; there is deliberately no second file holding
-a CTC figure that could drift out of sync.
+## The operator profile
+
+The candidate profile is the single source of truth for both scoring and
+screening answers, and it is **not in this repository**. It carries
+compensation, employer, education and domain-preference facts; this repo is
+public, because private repos bill Actions against a 2,000 min/month allowance
+that a 15-minute schedule exhausts in nine days.
+
+```bash
+mkdir -p ~/.job-agent/private
+cp config/candidate_profile.example.yaml ~/.job-agent/private/candidate_profile.yaml
+$EDITOR ~/.job-agent/private/candidate_profile.yaml
+```
+
+`score/llm.py:profile_path()` resolves, in order:
+
+| # | location | used by |
+|---|---|---|
+| 1 | `$CANDIDATE_PROFILE_PATH` | CI |
+| 2 | `~/.job-agent/private/candidate_profile.yaml` | local runs |
+| 3 | `config/candidate_profile.yaml` | gitignored local convenience |
+
+If none exists it raises `ProfileMissing` rather than falling back. A silent
+fallback would score every posting against no résumé facts at all and quietly
+produce meaningless numbers.
+
+For CI, add the file as a repository secret named `CANDIDATE_PROFILE_B64`:
+
+```bash
+base64 -w0 ~/.job-agent/private/candidate_profile.yaml
+```
+
+The workflow decodes it into the runner temp directory — outside the working
+tree, so no later step can commit it — and logs only the byte count.
+
+Its `scoring_rules` block is injected verbatim into the prompt: the only lever
+controlling score inflation, so tune calibration there, not in code. Its
+`compensation` block is stripped before the prompt is built and never reaches a
+model. `tests/test_llm.py` asserts that, reading the expected values out of the
+profile rather than hardcoding them — writing the real CTC into a public test to
+prove it never leaks would itself leak it.
+
+The dashboard renders those compensation values in its screening panel and
+cannot read the profile at runtime, so they travel as an environment variable:
+
+```bash
+python scripts/sync_screening.py            # prints the one-line JSON
+vercel env add SCREENING_JSON production    # paste it
+```
 
 ## LLM providers
 
@@ -133,8 +176,8 @@ automatically. `job_scores.provider` records which vendor scored each row.
 >
 > Google AI Studio's **free** tier uses submitted prompts and responses to
 > improve their products, and human reviewers may read them. The scoring prompt
-> contains the full contents of `config/candidate_profile.yaml` — résumé,
-> project descriptions, employer names and education.
+> contains the full contents of the candidate profile — résumé, project
+> descriptions, employer names and education.
 >
 > Compensation is stripped before the prompt is built and is asserted in
 > `tests/test_llm.py`, so CTC and notice period never leave this machine. The
@@ -159,8 +202,12 @@ window. Already observed on this project's own key:
 
 `python -m score.healthcheck` pings every enabled provider and cross-checks the
 configured model against the vendor's own model list, logging an ERROR when a
-model is no longer listed. It runs as a step in the ingest workflow and fails
-fast if nothing is usable.
+model is no longer listed. It runs daily as its own workflow
+(`.github/workflows/healthcheck.yml`) and fails fast if nothing is usable.
+
+It used to run on every 15-minute ingest tick, where it cost 167s of a ~395s
+run — 42% of the entire Actions budget spent asking eight vendors whether their
+models still existed, a question that changes on a scale of weeks.
 
 When scoring suddenly stops, run the healthcheck **first** — a rotted model id
 looks exactly like a broken integration.
@@ -174,8 +221,8 @@ python -m notify.watchdog --test      # prove the alert email path works
 ## Polling cadence — measured, not configured
 
 `ingest.yml` declares `cron: "*/15 * * * *"`. **That is not what happens.**
-GitHub deprioritises scheduled workflows on free and private repos. Gaps
-measured on this repo over one evening:
+GitHub deprioritises scheduled workflows on free plans regardless of visibility.
+Gaps measured on this repo over one evening:
 
 ```
 18:40 -> 19:44   64 min      21:21 -> 22:10   49 min
@@ -197,6 +244,25 @@ real 15-minute schedule. Manual dispatches are not deprioritised the way
 `schedule` events are. This is worth doing **only if** the funnel's apply-latency
 breakdown eventually shows that speed converts — until there is application
 data, it is optimisation without evidence.
+
+### Why this repository is public
+
+Private repositories bill Actions against a **2,000 min/month** allowance. This
+schedule cost ~4.7 billed minutes per tick and burned the whole month in nine
+days, after which every run failed in three seconds with no steps and no logs:
+
+> The job was not started because recent account payments have failed or your
+> spending limit needs to be increased.
+
+That failure mode is worth recognising on sight: **a run that dies in seconds
+with an empty step list is a billing problem, not a code problem.** No amount of
+reading application logs will explain it, because no runner was ever allocated.
+
+Public repositories get unmetered Actions minutes. The fix was to make this repo
+public and move the one file carrying PII out of it — see
+[The operator profile](#the-operator-profile) — rather than to slow the poll
+down. Splitting the provider healthcheck into its own daily workflow cut another
+42% off every run.
 
 ## Alerting
 

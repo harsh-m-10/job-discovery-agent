@@ -3,8 +3,13 @@ name: ingest
 on:
   schedule:
     # Every 15 minutes. GitHub's scheduler is best-effort: runs drift by 10-20
-    # minutes under load and are sometimes skipped outright. Every run re-fetches
-    # whole boards and diffs, so a missed tick costs latency, never data.
+    # minutes under load and are sometimes skipped outright — the measured gap
+    # on this repo averages ~53 min. Every run re-fetches whole boards and
+    # diffs, so a missed tick costs latency, never data.
+    #
+    # Affordable only because this repository is public: private repos bill
+    # against a 2,000 min/month allowance, which this schedule exhausted in
+    # nine days. Public repos get unmetered Actions minutes.
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
@@ -34,20 +39,23 @@ jobs:
       - name: Poll boards
         run: python -m ingest.run
 
-      - name: Provider healthcheck
-        # Non-fatal on its own: ingestion has already succeeded by this point,
-        # and the watchdog reports the outage. Scoring fails fast by itself.
-        continue-on-error: true
+      - name: Materialise the candidate profile
+        # The profile is not in this repository — it carries compensation and
+        # employer facts and the repo is public. It arrives as a secret and is
+        # written to the runner temp dir, outside the working tree, so that no
+        # step can accidentally commit it. Only the byte count is ever printed.
         env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: python -m score.healthcheck
+          CANDIDATE_PROFILE_B64: ${{ secrets.CANDIDATE_PROFILE_B64 }}
+        run: |
+          if [ -z "$CANDIDATE_PROFILE_B64" ]; then
+            echo "::error::CANDIDATE_PROFILE_B64 is not set — scoring cannot run"
+            exit 1
+          fi
+          printf '%s' "$CANDIDATE_PROFILE_B64" | base64 -d \
+            > "$RUNNER_TEMP/candidate_profile.yaml"
+          echo "CANDIDATE_PROFILE_PATH=$RUNNER_TEMP/candidate_profile.yaml" \
+            >> "$GITHUB_ENV"
+          echo "profile: $(wc -c < "$RUNNER_TEMP/candidate_profile.yaml") bytes"
 
       - name: Score new postings
         env:

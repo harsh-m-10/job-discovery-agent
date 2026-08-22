@@ -24,6 +24,24 @@ jobs:
       - name: Prefilter tests
         run: python tests/test_prefilter.py
 
+      - name: Materialise the candidate profile
+        # Optional on purpose. Pull requests from forks receive no secrets, so
+        # there the compensation-leak assertions skip instead of failing. On
+        # this repository's own pushes the secret is present and those
+        # assertions actually run — they are the reason the suite exists.
+        env:
+          CANDIDATE_PROFILE_B64: ${{ secrets.CANDIDATE_PROFILE_B64 }}
+        run: |
+          if [ -n "$CANDIDATE_PROFILE_B64" ]; then
+            printf '%s' "$CANDIDATE_PROFILE_B64" | base64 -d \
+              > "$RUNNER_TEMP/candidate_profile.yaml"
+            echo "CANDIDATE_PROFILE_PATH=$RUNNER_TEMP/candidate_profile.yaml" \
+              >> "$GITHUB_ENV"
+            echo "profile present: compensation assertions will run"
+          else
+            echo "no profile secret: compensation assertions will skip"
+          fi
+
       - name: Scoring transport tests
         run: python tests/test_llm.py
 

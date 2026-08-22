@@ -1,0 +1,45 @@
+name: healthcheck
+
+on:
+  schedule:
+    # Once a day, deliberately off the hour to avoid the scheduler's busiest
+    # minute. Model names rot on a scale of weeks — vendors retire and rename
+    # them with little notice — so provider health is a daily question, not a
+    # per-ingest one.
+    #
+    # This used to run inside ingest.yml on every 15-minute tick, where it took
+    # 167s of a ~395s run: 42% of the entire Actions budget spent asking eight
+    # vendors whether their models still existed. Splitting it out is the single
+    # largest saving available, and costs nothing in detection latency that
+    # matters at this cadence.
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Probe every configured provider
+        # No candidate profile needed: this sends a fixed toy payload and only
+        # asks whether the model answers. A failure here turns the run red, and
+        # GitHub's default workflow-failure notification is the alert.
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: python -m score.healthcheck

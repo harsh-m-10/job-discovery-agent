@@ -23,3 +23,12 @@ connections.csv
 data/
 exports/
 /*.csv
+
+# --- Operator profile. This repository is public, and the profile is the one
+# file that carries compensation, employer, education and domain-preference
+# facts. It lives in ~/.job-agent/private/ next to the LinkedIn export and
+# reaches CI through the CANDIDATE_PROFILE_B64 secret — never through git.
+# See config/candidate_profile.example.yaml and score/llm.py:profile_path.
+config/candidate_profile.yaml
+dashboard/lib/screening.generated.json
+.local/

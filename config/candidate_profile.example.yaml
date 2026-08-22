@@ -1,0 +1,152 @@
+# config/candidate_profile.example.yaml
+#
+# Template for the operator profile. Copy it, fill it in, and keep the result
+# OUT of this repository:
+#
+#     mkdir -p ~/.job-agent/private
+#     cp config/candidate_profile.example.yaml \
+#        ~/.job-agent/private/candidate_profile.yaml
+#
+# score/llm.py:profile_path() resolves, in order:
+#   1. $CANDIDATE_PROFILE_PATH        (how CI supplies it)
+#   2. ~/.job-agent/private/candidate_profile.yaml
+#   3. config/candidate_profile.yaml  (gitignored; local convenience only)
+#
+# The real file carries salary, employer and education facts, which is why it
+# is not tracked. In CI it arrives as the CANDIDATE_PROFILE_B64 secret:
+#
+#     base64 -w0 ~/.job-agent/private/candidate_profile.yaml
+#
+# Everything except `compensation` is fed verbatim into the scoring prompt.
+# `compensation` is stripped before the prompt is built and is asserted absent
+# by tests/test_llm.py — a hallucinated CTC is unrecoverable once an employer
+# has seen it.
+
+identity:
+  name: "Your Name"
+  current_title: "Software Engineer"
+  current_company: "Current Employer"
+  location: "City, Country"
+  graduation_year: 2025
+  # Scoring reads these two directly. Keep them honest — the prefilter and the
+  # model both reason about stated experience minimums against them.
+  years_experience_post_grad: 1.0
+  # Count a substantial full-time internship here if employers would.
+  years_experience_incl_internship: 1.5
+
+education:
+  degree: "B.E./B.Tech, Field"
+  institution: "Institution Name"
+  duration: "2021 - 2025"
+  cgpa: 0.0
+
+target_roles:
+  - Backend Engineer / Platform Engineer
+  - ML Engineer / MLOps Engineer
+  - Software Engineer (general IC)
+
+# Domain adjacency — boosts fit_score, never a hard filter.
+strong_domain_fit:
+  - a domain you have shipped production work in
+  - an adjacent domain your experience transfers to
+
+# Industries to move away from. Scored as a penalty, never a hard reject.
+avoid_domains:
+  - an industry you are deliberately leaving
+
+skills:
+  languages: [Python, JavaScript]
+  ai_ml: []
+  libraries: []
+  backend_infra: [REST APIs, Docker, Kubernetes, Git, Linux]
+  web: []
+
+experience:
+  - company: "Current Employer"
+    title: "Software Engineer"
+    start: "2025-01"
+    end: "present"
+    domain: "What the company actually does"
+    projects:
+      - name: "Project name"
+        summary: >
+          What you built, in one or two sentences.
+        scale: "Throughput, dataset size, request volume — whatever is real"
+        impact: "The measurable outcome"
+        # Optional. Steers the model toward companies where this work is the
+        # core product rather than incidental.
+        relevance_note: >
+          Which kinds of employers should score this generously, and why.
+
+internship:
+  - company: "Internship Employer"
+    title: "Intern"
+    start: "2024-01"
+    end: "2024-06"
+    duration_months: 6
+    projects:
+      - name: "Project name"
+        summary: >
+          What you built.
+    relevance_note: >
+      Say whether this was substantive full-time engineering. The model uses
+      this to decide how much credit a stated experience minimum should get.
+
+side_projects:
+  - name: "Project name"
+    url: "https://example.com"
+    summary: >
+      What it does and what is technically interesting about it.
+
+# ---- SCORING CALIBRATION RULES — injected verbatim into the prompt ----
+#
+# This block is the only lever controlling score inflation. Keys are free-form:
+# each one becomes an uppercased bullet in the system prompt, so add or remove
+# rules as needed. The text below describes the mechanism; replace the specifics.
+scoring_rules:
+  experience_handling: >
+    State your real experience, then say how strictly stated minimums should be
+    enforced. Employers routinely under-enforce them, so a scorer that enforces
+    them strictly will discard viable roles. Name the threshold at which a
+    posting genuinely should be rejected.
+
+  seniority_titles: >
+    List the titles that look senior but are ordinary IC roles at some
+    companies, and the titles that are genuine rejects. Getting this wrong in
+    either direction is expensive.
+
+  score_distribution: >
+    Be discriminating, not generous. 9+ must be rare. If more than ~20% of a
+    batch scores 8+, calibration is wrong. A generic role at a company with no
+    domain overlap is a 5, not a 7.
+
+  domain_bonus: >
+    Which categories of work should raise the score, and by roughly how much.
+    Keep the arithmetic explicit — "roughly +1.5" — so batches stay comparable.
+
+  domain_penalty: >
+    Which companies or role types should lower the score, and by how much. Name
+    representative companies: the model matches far more reliably on concrete
+    names than on an abstract category.
+
+  transferable_not_preferred: >
+    If your strongest experience is in the industry you are leaving, say so
+    explicitly. Otherwise the model reads that experience as a preference and
+    scores exactly the roles you are trying to escape most highly. State that
+    the skills transfer while the industry is being left behind on purpose.
+
+  stack_notes: >
+    Which technologies you actually have depth in versus which are adjacent.
+    Tell the model to flag genuine gaps rather than reject on them.
+
+# ---- NEVER LLM-GENERATED — read verbatim into screening answers ----
+# Stripped from the scoring prompt. Surfaced only on the private dashboard,
+# via scripts/sync_screening.py -> the SCREENING_JSON environment variable.
+compensation:
+  expected_ctc: "<expected range>"
+  expected_base_min_lpa: 0
+  current_ctc: "<current CTC>"
+  current_ctc_inr: 0
+  current_in_hand_inr: 0
+  notice_period_days: 30
+  location_preference: "City / Hybrid"
