@@ -156,19 +156,31 @@ def main() -> int:
               f"{email_channel.transport() or 'none'}")
         return 0
 
+    # An unconfigured CallMeBot is a settled state, not a per-job failure: it
+    # will refuse all 61 pings for the same reason and leave 61 identical
+    # "not set" rows behind. Decide once, and if it is not set up, go straight
+    # to email rather than logging a failure per job. A configured-but-broken
+    # CallMeBot still falls through per job, which is the case that needs the
+    # per-job record.
+    whatsapp_ready = whatsapp.configured()
+    if not whatsapp_ready:
+        print("whatsapp not configured — delivering by email\n")
+
     sent = failed = 0
     for job in jobs:
         message = whatsapp.format_message(job, dashboard)
-        try:
-            whatsapp.send(message)
-            record(job["job_id"], "whatsapp", True, None)
-            sent += 1
-            print(f"  sent    {job['fit_score']} {job['title'][:48]}")
-            continue
-        except Exception as exc:
-            whatsapp_error = str(exc)
-            record(job["job_id"], "whatsapp", False, whatsapp_error)
-            print(f"  FAILED  {job['title'][:48]}: {whatsapp_error[:90]}")
+        whatsapp_error = "whatsapp not configured"
+        if whatsapp_ready:
+            try:
+                whatsapp.send(message)
+                record(job["job_id"], "whatsapp", True, None)
+                sent += 1
+                print(f"  sent    {job['fit_score']} {job['title'][:48]}")
+                continue
+            except Exception as exc:
+                whatsapp_error = str(exc)
+                record(job["job_id"], "whatsapp", False, whatsapp_error)
+                print(f"  FAILED  {job['title'][:48]}: {whatsapp_error[:90]}")
 
         # Fallback. A WhatsApp failure must not cost the job.
         try:
