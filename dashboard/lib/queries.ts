@@ -80,11 +80,6 @@ async function referralIndex() {
   return byCompany;
 }
 
-/**
- * The queue: everything scored at or above the ping threshold that has not been
- * actioned yet. A job with no `applications` row counts as queued — rows are
- * only created when a button is pressed, so absence means untouched.
- */
 /** Days since the ATS posting date, falling back to our first sighting. */
 function ageDays(row: { posted_at: string | null; first_seen_at: string }): number {
   return hoursSince(effectivePostedAt(row)) / 24;
@@ -94,6 +89,12 @@ function tooOld(row: { posted_at: string | null; first_seen_at: string }): boole
   return MAX_AGE_DAYS > 0 && ageDays(row) > MAX_AGE_DAYS;
 }
 
+/**
+ * The queue: everything scored at or above the ping threshold that has not been
+ * actioned yet and is not stale. A job with no `applications` row counts as
+ * queued — rows are only created when a button is pressed, so absence means
+ * untouched.
+ */
 export async function getQueue(): Promise<QueueRow[]> {
   const [jobs, scores, apps, referrals] = await Promise.all([
     select<JobRow>(
