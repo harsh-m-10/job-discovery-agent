@@ -97,9 +97,16 @@ llm_providers:
   # nvidia meta/llama-3.3-70b (read timeout at 150s), openrouter gpt-oss-20b
   # (worked but took 102s, far too slow to sit in the chain).
 
+  # DEMOTED 2026-09-04 from priority 2. The key is valid — GET /v1/models
+  # answers 200 — but every /chat/completions call returns 429 "Rate limit
+  # exceeded" (code 1300) instantly, from a cold start, on any model. That is
+  # the account's own free-tier gate, not our pacing: no request of ours has
+  # succeeded to be limited in the first place. It stays enabled and configured
+  # so it rejoins the chain the moment the account is activated, but it must not
+  # sit ahead of providers that actually answer.
   - name: mistral
-    priority: 2
-    model: mistral-small-latest        # 4.5s, 5/5 — fastest non-Google option
+    priority: 6
+    model: mistral-small-latest        # 4.5s, 5/5 when the account was live
     base_url: https://api.mistral.ai/v1
     api_key_env: MISTRAL_API_KEY
     rpm: 30
@@ -141,9 +148,15 @@ llm_providers:
     enabled: true
     timeout: 120
 
+  # Model swapped 2026-09-04: openai/gpt-oss-120b now answers 410 Gone ("the
+  # model has been deprecated") and the whole provider was dead. The catalogue
+  # still lists openai/gpt-oss-20b, but it returns a null message content under
+  # json_object mode, so it is unusable here. nemotron-3-super answered in 5.3s
+  # with valid JSON — faster than the model it replaces, hence the promotion
+  # from 6 to 2.
   - name: nvidia
-    priority: 6
-    model: openai/gpt-oss-120b         # 20.3s, 5/5
+    priority: 2
+    model: nvidia/nemotron-3-super-120b-a12b   # 5.3s, valid JSON
     base_url: https://integrate.api.nvidia.com/v1
     api_key_env: NVIDIA_API_KEY
     rpm: 30

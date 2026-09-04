@@ -10,6 +10,11 @@
   token: chronospherejobs
   category: observability
   priority: 1
+- name: Coinbase
+  ats: greenhouse
+  token: coinbase
+  category: fintech
+  priority: 1
 - name: Confluent
   ats: ashby
   token: confluent
@@ -30,10 +35,25 @@
   token: datadog
   category: observability
   priority: 1
+- name: DoorDash
+  ats: greenhouse
+  token: doordashindia
+  category: product
+  priority: 1
 - name: Fi Money
   ats: lever
   token: epifi
   category: product
+  priority: 1
+- name: Fivetran
+  ats: greenhouse
+  token: fivetran
+  category: data
+  priority: 1
+- name: GitLab
+  ats: greenhouse
+  token: gitlab
+  category: devtools
   priority: 1
 - name: Grafana Labs
   ats: greenhouse
@@ -55,15 +75,45 @@
   token: meesho
   category: product
   priority: 1
+- name: Mindtickle
+  ats: lever
+  token: mindtickle
+  category: product
+  priority: 1
+- name: Netskope
+  ats: greenhouse
+  token: netskope
+  category: security
+  priority: 1
+- name: Nium
+  ats: lever
+  token: nium
+  category: fintech
+  priority: 1
 - name: Observe.AI
   ats: greenhouse
   token: observeai
   category: product
   priority: 1
+- name: Okta
+  ats: greenhouse
+  token: okta
+  category: security
+  priority: 1
+- name: Payoneer
+  ats: greenhouse
+  token: payoneer
+  category: fintech
+  priority: 1
 - name: Postman
   ats: greenhouse
   token: postman
   category: product
+  priority: 1
+- name: Pure Storage
+  ats: greenhouse
+  token: purestorage
+  category: infra
   priority: 1
 - name: Razorpay
   ats: greenhouse
@@ -90,20 +140,70 @@
   token: stripe
   category: product
   priority: 1
+- name: Veeam
+  ats: greenhouse
+  token: veeamsoftware
+  category: infra
+  priority: 1
+- name: Zeta Global
+  ats: greenhouse
+  token: zetaglobal
+  category: product
+  priority: 1
+- name: ZoomInfo
+  ats: greenhouse
+  token: zoominfo
+  category: product
+  priority: 1
+- name: Zscaler
+  ats: greenhouse
+  token: zscaler
+  category: security
+  priority: 1
+- name: Abnormal Security
+  ats: greenhouse
+  token: abnormalsecurity
+  category: security
+  priority: 2
 - name: Adobe
   ats: workday
   token: adobe|wd5|external_experienced
   category: gcc
+  priority: 2
+- name: Airbnb
+  ats: greenhouse
+  token: airbnb
+  category: product
+  priority: 2
+- name: Airwallex
+  ats: ashby
+  token: airwallex
+  category: fintech
   priority: 2
 - name: Cisco
   ats: workday
   token: cisco|wd5|cisco_Careers
   category: gcc
   priority: 2
+- name: ClickHouse
+  ats: ashby
+  token: clickhouse
+  category: data
+  priority: 2
 - name: Cloudflare
   ats: greenhouse
   token: cloudflare
   category: product
+  priority: 2
+- name: Commvault
+  ats: greenhouse
+  token: commvault
+  category: infra
+  priority: 2
+- name: Couchbase
+  ats: greenhouse
+  token: couchbaseinc
+  category: data
   priority: 2
 - name: Elastic
   ats: greenhouse
@@ -115,10 +215,30 @@
   token: freshworks
   category: product
   priority: 2
+- name: Harvey
+  ats: ashby
+  token: harvey
+  category: ai
+  priority: 2
+- name: JFrog
+  ats: greenhouse
+  token: jfrog
+  category: devtools
+  priority: 2
+- name: Komodo Health
+  ats: greenhouse
+  token: komodohealth
+  category: health
+  priority: 2
 - name: Level AI
   ats: lever
   token: levelai
   category: product
+  priority: 2
+- name: Lyra Health
+  ats: lever
+  token: lyrahealth
+  category: health
   priority: 2
 - name: MongoDB
   ats: greenhouse
@@ -130,15 +250,35 @@
   token: newrelic
   category: observability
   priority: 2
+- name: OpenAI
+  ats: ashby
+  token: openai
+  category: ai
+  priority: 2
 - name: Porter
   ats: lever
   token: porter
   category: product
   priority: 2
+- name: SingleStore
+  ats: greenhouse
+  token: singlestore
+  category: data
+  priority: 2
 - name: Snowflake
   ats: ashby
   token: snowflake
   category: product
+  priority: 2
+- name: SolarWinds
+  ats: greenhouse
+  token: solarwinds
+  category: observability
+  priority: 2
+- name: Sophos
+  ats: lever
+  token: sophos
+  category: security
   priority: 2
 - name: Sumo Logic
   ats: greenhouse
@@ -155,20 +295,85 @@
   token: twilio
   category: product
   priority: 2
+- name: Yugabyte
+  ats: greenhouse
+  token: yugabyte
+  category: data
+  priority: 2
 - name: Zeta
   ats: lever
   token: zeta
   category: product
   priority: 2
+- name: Zocdoc
+  ats: greenhouse
+  token: zocdoc
+  category: health
+  priority: 2
+- name: Amplitude
+  ats: greenhouse
+  token: amplitude
+  category: product
+  priority: 3
+- name: Anthropic
+  ats: greenhouse
+  token: anthropic
+  category: ai
+  priority: 3
+- name: Apollo.io
+  ats: greenhouse
+  token: apolloio
+  category: product
+  priority: 3
+- name: Astronomer
+  ats: ashby
+  token: astronomer
+  category: data
+  priority: 3
+- name: Chainguard
+  ats: greenhouse
+  token: chainguard
+  category: security
+  priority: 3
 - name: Cockroach Labs
   ats: greenhouse
   token: cockroachlabs
+  category: product
+  priority: 3
+- name: Coursera
+  ats: greenhouse
+  token: coursera
+  category: edtech
+  priority: 3
+- name: Cresta
+  ats: greenhouse
+  token: cresta
+  category: ai
+  priority: 3
+- name: Figma
+  ats: greenhouse
+  token: figma
   category: product
   priority: 3
 - name: HighRadius
   ats: greenhouse
   token: highradius
   category: product
+  priority: 3
+- name: Hightouch
+  ats: greenhouse
+  token: hightouch
+  category: data
+  priority: 3
+- name: Hinge Health
+  ats: ashby
+  token: hinge-health
+  category: health
+  priority: 3
+- name: Included Health
+  ats: lever
+  token: includedhealth
+  category: health
   priority: 3
 - name: InMobi
   ats: greenhouse
@@ -178,6 +383,21 @@
 - name: Navi
   ats: ashby
   token: navi
+  category: product
+  priority: 3
+- name: Neon
+  ats: ashby
+  token: neon
+  category: data
+  priority: 3
+- name: Notion
+  ats: ashby
+  token: notion
+  category: product
+  priority: 3
+- name: Outreach
+  ats: lever
+  token: outreach
   category: product
   priority: 3
 - name: Plivo
@@ -190,10 +410,40 @@
   token: redis
   category: product
   priority: 3
+- name: Salesloft
+  ats: greenhouse
+  token: salesloft
+  category: product
+  priority: 3
+- name: Scale AI
+  ats: greenhouse
+  token: scaleai
+  category: ai
+  priority: 3
 - name: Slice
   ats: greenhouse
   token: slice
   category: product
+  priority: 3
+- name: Starburst
+  ats: greenhouse
+  token: starburst
+  category: data
+  priority: 3
+- name: StarTree
+  ats: greenhouse
+  token: startree
+  category: data
+  priority: 3
+- name: Temporal
+  ats: ashby
+  token: temporal
+  category: devtools
+  priority: 3
+- name: Vercel
+  ats: greenhouse
+  token: vercel
+  category: devtools
   priority: 3
 - name: Wiz
   ats: greenhouse
