@@ -207,11 +207,29 @@ def check_title(title: str) -> str | None:
 
 def prefilter(title: str, description: str, *, location_ok: bool = True,
               max_experience_years: float = 4.0,
-              already_scored: bool = False) -> Prefiltered:
+              already_scored: bool = False,
+              age_days: float | None = None,
+              max_age_days: float | None = None) -> Prefiltered:
     """The full stage-1 gate. Order matters only for which reason gets recorded;
-    the cheapest and most certain checks run first."""
+    the cheapest and most certain checks run first.
+
+    `age_days` is measured from the ATS posting date, falling back to our first
+    sighting when the board publishes none. That fallback is why a stale req on
+    a newly added board is only caught when the board dates it: to us the
+    posting is one minute old. Passing `age_days=None` skips the check, which is
+    what `--rescore` and the offline calibration harness want.
+    """
     if already_scored:
         return Prefiltered(False, "already_scored")
+
+    # Cheapest check in the file, and the one that saves the most money: a req
+    # the operator will not apply to should never reach a paid call. Measured on
+    # 2026-09-04 against 170 LLM-scored open jobs, a 5-day ceiling would have
+    # skipped 143 of them.
+    if (max_age_days is not None and age_days is not None
+            and age_days > max_age_days):
+        return Prefiltered(False, f"age:{age_days:g}d")
+
     if not location_ok:
         return Prefiltered(False, "location")
 

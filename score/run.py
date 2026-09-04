@@ -19,6 +19,7 @@ import logging
 import sys
 import time
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 # LLM output routinely contains en-dashes and non-breaking hyphens. The Windows
@@ -59,6 +60,25 @@ def load_settings() -> dict:
 def truncate(text: str, width: int) -> str:
     text = (text or "").replace("\n", " ").strip()
     return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def job_age_days(job: dict) -> float | None:
+    """Age in days from the ATS posting date, else our first sighting.
+
+    Same precedence the dashboard and the notifier use, so a job's stated age is
+    one number everywhere. Returns None when neither stamp parses, which leaves
+    the age gate open rather than silently discarding the posting.
+    """
+    stamp = job.get("posted_at") or job.get("first_seen_at")
+    if not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds() / 86400
 
 
 def print_table(rows: list[dict]) -> None:
@@ -104,6 +124,11 @@ def main() -> int:
     ap.add_argument("--retry-failed", action="store_true",
                     help="re-score jobs whose previous scoring attempt errored")
     ap.add_argument("--provider", help="use only this provider (e.g. google)")
+    ap.add_argument("--max-age-days", type=float,
+                    help="skip postings older than this, before any LLM call "
+                         "(default: max_age_days in settings.yaml). Pass 0 to "
+                         "disable the age gate — needed on the first run after "
+                         "adding a board, whose whole back catalogue is old")
     ap.add_argument("--batch-size", type=int,
                     help="override llm_batch_size — needed when falling back to "
                          "a model with a tighter per-minute cap")
@@ -116,6 +141,19 @@ def main() -> int:
     settings = load_settings()
     max_years = float(settings.get("max_experience_years", 4))
     penalties = settings.get("headcount_penalties") or {}
+    # An explicit --max-age-days always wins, including over --rescore: asking
+    # for both is a deliberate "re-score, but only the recent ones". Absent the
+    # flag, --rescore disables the gate, since re-scoring an existing corpus is
+    # deliberate and that corpus is old by definition. 0 from either source
+    # disables it outright.
+    if args.max_age_days is not None:
+        max_age = args.max_age_days or None
+    elif args.rescore:
+        max_age = None
+    else:
+        max_age = float(settings.get("max_age_days", 0) or 0) or None
+    if max_age:
+        print(f"age gate: skipping postings older than {max_age:g} days")
     store = ScoreStore()
 
     providers = default_providers()
@@ -197,14 +235,33 @@ def main() -> int:
     rejects: list[dict] = []
     reasons: Counter[str] = Counter()
 
+    # A prefilter reject overwrites whatever score a job already had. On a
+    # normal run that is harmless — only unscored jobs are loaded — but under
+    # --rescore it will demote real LLM judgements to a one-line reject and
+    # destroy the reasoning behind them. Tightening a rule then re-scoring is
+    # exactly when that happens, and it is silent and irreversible: it cost 144
+    # scores on 2026-09-04 before this guard existed.
+    already_llm_scored: set[int] = set()
+    if args.rescore or args.retry_failed:
+        already_llm_scored = {s["job_id"] for s in store.scores()
+                              if s.get("fit_score") is not None}
+    preserved = 0
+
     for job in jobs:
         result = prefilter(
             job["title"], job.get("description") or "",
             location_ok=is_india_relevant(job.get("location"), job.get("description") or ""),
             max_experience_years=max_years,
+            age_days=job_age_days(job),
+            max_age_days=max_age,
         )
         if result.passed:
             survivors.append(job)
+        elif job["id"] in already_llm_scored:
+            # Leave the stored score untouched. The job is excluded from this
+            # run rather than downgraded, so the new rule governs what gets
+            # scored next without erasing what was already learned.
+            preserved += 1
         else:
             reasons[result.reject_reason.split(":")[0]] += 1
             rejects.append({
@@ -217,6 +274,9 @@ def main() -> int:
     print(f"prefilter: {len(survivors)} passed, {len(rejects)} rejected")
     for reason, count in reasons.most_common():
         print(f"    {count:>4}  {reason}")
+    if preserved:
+        print(f"    {preserved:>4}  kept — already carry an LLM score, "
+              f"not downgraded to a prefilter reject")
     store.upsert_scores(rejects)
 
     if args.prefilter_only:

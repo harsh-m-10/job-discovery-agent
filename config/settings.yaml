@@ -4,6 +4,26 @@ poll_interval_minutes: 15
 max_experience_years: 4
 
 # ---------------------------------------------------------------------------
+# Age ceiling, enforced in the prefilter so a stale req never reaches a paid
+# call. Age is the ATS posting date, falling back to first_seen_at when the
+# board publishes none.
+#
+# Measured 2026-09-04 over 1,591 open jobs: only 187 were 5 days old or less,
+# and of the 170 that had reached the LLM, 143 were older than 5 days. So this
+# is the single biggest lever on spend — but most of that backlog is an
+# artefact of adding 52 boards that day, whose whole back catalogue arrived at
+# once. In steady state, ingest runs every 15 minutes and genuinely new
+# postings are seen within hours, so this gate should rarely bite.
+#
+# The cost is real and worth knowing: applied to that day's queue it would also
+# have dropped 51 of 61 jobs above threshold, including a 7-day-old 9.5. Raise
+# it if good matches start disappearing; 0 disables the gate entirely.
+#
+# When adding a new board, score its first run with --max-age-days 0, or its
+# entire existing catalogue is discarded unscored.
+max_age_days: 5
+
+# ---------------------------------------------------------------------------
 # LLM providers, tried in `priority` order. Every limit lives here — nothing is
 # hardcoded in score/providers.py.
 #

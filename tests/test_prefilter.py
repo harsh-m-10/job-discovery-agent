@@ -200,6 +200,47 @@ def test_threshold_is_configurable():
     assert prefilter("Backend Engineer", jd, max_experience_years=8).passed
 
 
+# --- age gate -----------------------------------------------------------
+# The gate runs before the LLM, so a bug here either burns money on stale reqs
+# or silently discards fresh ones. Both directions are pinned.
+
+def test_a_stale_posting_is_rejected_with_its_age():
+    result = prefilter("Backend Engineer", "", age_days=12, max_age_days=5)
+    assert not result.passed
+    assert result.reject_reason == "age:12d"
+
+
+def test_a_fresh_posting_survives_the_gate():
+    assert prefilter("Backend Engineer", "", age_days=2, max_age_days=5).passed
+
+
+def test_the_boundary_day_is_kept():
+    # Exactly at the ceiling must pass: "older than 5 days" is the rule, and an
+    # off-by-one here quietly drops a day's worth of postings.
+    assert prefilter("Backend Engineer", "", age_days=5, max_age_days=5).passed
+    assert not prefilter("Backend Engineer", "", age_days=5.1, max_age_days=5).passed
+
+
+def test_the_gate_is_open_when_either_side_is_unknown():
+    # No max configured, or no usable date on the posting. Neither may discard.
+    assert prefilter("Backend Engineer", "", age_days=900).passed
+    assert prefilter("Backend Engineer", "", age_days=None, max_age_days=5).passed
+
+
+def test_age_outranks_the_other_reasons():
+    # Cheapest and most certain check first, so a stale senior req is recorded
+    # as stale rather than as senior. Keeps the spend attribution honest.
+    result = prefilter("Senior Staff Engineer", "10+ years of experience.",
+                       age_days=40, max_age_days=5)
+    assert result.reject_reason == "age:40d"
+
+
+def test_already_scored_still_wins_over_age():
+    result = prefilter("Backend Engineer", "", already_scored=True,
+                       age_days=40, max_age_days=5)
+    assert result.reject_reason == "already_scored"
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
