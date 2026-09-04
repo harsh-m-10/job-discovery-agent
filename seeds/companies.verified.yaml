@@ -180,6 +180,11 @@
   token: airwallex
   category: fintech
   priority: 2
+- name: BrowserStack
+  ats: workday
+  token: browserstack|wd3|External
+  category: product
+  priority: 2
 - name: Cisco
   ats: workday
   token: cisco|wd5|cisco_Careers
@@ -279,6 +284,11 @@
   ats: lever
   token: sophos
   category: security
+  priority: 2
+- name: Sprinklr
+  ats: workday
+  token: sprinklr|wd1|Careers
+  category: product
   priority: 2
 - name: Sumo Logic
   ats: greenhouse

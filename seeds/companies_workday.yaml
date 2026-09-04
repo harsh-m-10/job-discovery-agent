@@ -20,3 +20,9 @@
 - {name: Cisco,  ats: workday, token: "cisco|wd5|cisco_Careers",   category: gcc, priority: 2}
 - {name: Target, ats: workday, token: "target|wd5|targetCareers",  category: gcc, priority: 2}
 - {name: Adobe,  ats: workday, token: "adobe|wd5|external_experienced", category: gcc, priority: 2}
+
+# --- Added 2026-09-04. Both were previously recorded dead as lever/<name>;
+# their careers pages load Workday, and find_workday.py resolved the tenants.
+# Identity confirmed from a sample posting, as above.
+- {name: Sprinklr,     ats: workday, token: "sprinklr|wd1|Careers",     category: product, priority: 2}   # 92 jobs
+- {name: BrowserStack, ats: workday, token: "browserstack|wd3|External", category: product, priority: 2}   # 30 jobs
