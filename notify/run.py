@@ -70,8 +70,14 @@ def age_label(hours: float) -> str:
     return f"{int(hours / 24)}d"
 
 
-def pending_jobs(threshold: float) -> list[dict]:
-    """Jobs above threshold, still open, never notified."""
+def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[dict]:
+    """Jobs above threshold, still open, never notified, not stale.
+
+    The age check is repeated here rather than trusted to the scorer's gate.
+    That gate only governs which jobs get scored; a job scored before the gate
+    existed, or under a wider ceiling, keeps its score and would otherwise be
+    pinged months late.
+    """
     headers = db_headers()
     scores = requests.get(
         f"{base_url()}/job_scores?select=job_id,fit_score,min_years,max_years,"
@@ -106,6 +112,8 @@ def pending_jobs(threshold: float) -> list[dict]:
         stamp = job.get("posted_at") or job["first_seen_at"]
         hours = (now - datetime.fromisoformat(stamp.replace("Z", "+00:00"))
                  ).total_seconds() / 3600
+        if max_age_days and hours / 24 > max_age_days:
+            continue
         out.append({
             "job_id": job["id"],
             "title": job["title"],
@@ -184,8 +192,11 @@ def main() -> int:
         settings.get("ping_threshold", 6.5))
     dashboard = os.environ.get("DASHBOARD_URL", "")
 
-    jobs = pending_jobs(threshold)
-    print(f"{len(jobs)} job(s) at or above {threshold} awaiting a first ping\n")
+    max_age = float(settings.get("max_age_days", 0) or 0) or None
+    jobs = pending_jobs(threshold, max_age)
+    age_note = f", posted within {max_age:g} days" if max_age else ""
+    print(f"{len(jobs)} job(s) at or above {threshold}{age_note} "
+          f"awaiting a first ping\n")
     if not jobs:
         return 0
 

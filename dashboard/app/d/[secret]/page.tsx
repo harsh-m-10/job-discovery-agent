@@ -59,6 +59,26 @@ export default async function QueuePage({
         </div>
       )}
 
+      {/* Same reasoning as the banner above: a queue that quietly shrank from
+          62 to 12 reads as a broken pipeline. Say what was suppressed and how
+          to see it. */}
+      {meta.hiddenByAge > 0 && (
+        <div className="banner">
+          <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          <div>
+            <b>{meta.hiddenByAge} match(es) hidden — posted more than{" "}
+            {meta.maxAgeDays} days ago.</b> They are still scored and stored, just
+            kept out of the queue. Change <code>MAX_AGE_DAYS</code> in the
+            dashboard environment to widen the window, or set it to{" "}
+            <code>0</code> to show everything.
+          </div>
+        </div>
+      )}
+
       {meta.stranded > 0 && (
         <div className="banner" data-kind="error">
           <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"

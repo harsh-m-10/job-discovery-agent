@@ -1,7 +1,22 @@
 import "server-only";
-import { select, type QueueRow } from "./db";
+import { select, effectivePostedAt, hoursSince, type QueueRow } from "./db";
 
 const THRESHOLD = Number(process.env.PING_THRESHOLD ?? "6.5");
+
+/**
+ * Age ceiling for the queue, mirroring max_age_days in config/settings.yaml.
+ *
+ * The scorer's gate and this one do different jobs and neither replaces the
+ * other. That gate stops old postings reaching a paid LLM call, but it only
+ * ever applies to jobs being scored for the first time — anything already
+ * scored keeps its score, deliberately, so that tightening the rule does not
+ * erase work already paid for. The consequence is that old jobs scored under
+ * the previous rule stay in the queue forever unless the read side filters
+ * them too, which is exactly what was showing 101-day-old postings.
+ *
+ * 0 disables the filter.
+ */
+const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS ?? "5");
 
 /** Company-name normalization mirroring score/referral.py (spec §7.3). */
 function normalizeCompany(name: string): string {
@@ -70,6 +85,15 @@ async function referralIndex() {
  * actioned yet. A job with no `applications` row counts as queued — rows are
  * only created when a button is pressed, so absence means untouched.
  */
+/** Days since the ATS posting date, falling back to our first sighting. */
+function ageDays(row: { posted_at: string | null; first_seen_at: string }): number {
+  return hoursSince(effectivePostedAt(row)) / 24;
+}
+
+function tooOld(row: { posted_at: string | null; first_seen_at: string }): boolean {
+  return MAX_AGE_DAYS > 0 && ageDays(row) > MAX_AGE_DAYS;
+}
+
 export async function getQueue(): Promise<QueueRow[]> {
   const [jobs, scores, apps, referrals] = await Promise.all([
     select<JobRow>(
@@ -95,6 +119,7 @@ export async function getQueue(): Promise<QueueRow[]> {
     if (!job) continue;                                   // closed since scoring
     const status = statusByJob.get(score.job_id) ?? "queued";
     if (status !== "queued") continue;
+    if (tooOld(job)) continue;                            // stale, counted in meta
 
     const company = job.companies?.name ?? "";
     const contacts = referrals.get(normalizeCompany(company)) ?? [];
@@ -139,7 +164,9 @@ export async function getQueue(): Promise<QueueRow[]> {
  */
 export async function getQueueMeta() {
   const [jobs, scores, apps] = await Promise.all([
-    select<{ id: number }>("jobs", "select=id&closed_at=is.null"),
+    select<{ id: number; posted_at: string | null; first_seen_at: string }>(
+      "jobs", "select=id,posted_at,first_seen_at&closed_at=is.null",
+    ),
     select<{ job_id: number; fit_score: number | null; reject_reason: string | null }>(
       "job_scores", "select=job_id,fit_score,reject_reason",
     ),
@@ -151,8 +178,21 @@ export async function getQueueMeta() {
   const scoredIds = new Set(scores.map((s) => s.job_id));
   const weekAgo = Date.now() - 7 * 86_400_000;
 
+  // Above threshold but suppressed for age. Reported rather than dropped
+  // silently: a queue that shrank from 62 to 12 with no explanation reads as a
+  // broken pipeline, which is the same failure `unscored` exists to prevent.
+  const overThreshold = new Set(
+    scores.filter((s) => s.fit_score !== null && Number(s.fit_score) >= THRESHOLD)
+      .map((s) => s.job_id),
+  );
+  const hiddenByAge = jobs.filter(
+    (j) => overThreshold.has(j.id) && tooOld(j),
+  ).length;
+
   return {
     openJobs: jobs.length,
+    hiddenByAge,
+    maxAgeDays: MAX_AGE_DAYS,
     unscored: jobs.filter((j) => !scoredIds.has(j.id)).length,
     // Jobs the LLM never got to because every provider refused. Distinct from
     // "not scored yet": these will not be retried by an ordinary run.
