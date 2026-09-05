@@ -26,3 +26,20 @@
 # Identity confirmed from a sample posting, as above.
 - {name: Sprinklr,     ats: workday, token: "sprinklr|wd1|Careers",     category: product, priority: 2}   # 92 jobs
 - {name: BrowserStack, ats: workday, token: "browserstack|wd3|External", category: product, priority: 2}   # 30 jobs
+
+# --- Added 2026-09-05. Tenants resolved with find_workday.py, then the India
+# count confirmed by running the adapter itself rather than trusting the raw
+# board size — the adapter applies a country facet, so board total and useful
+# total differ by orders of magnitude here (Micron: 2,847 posted, 79 in India).
+- {name: Micron, ats: workday, token: "micron|wd1|External", category: gcc, priority: 1}   # india=79
+- {name: PayPal, ats: workday, token: "paypal|wd1|jobs",     category: gcc, priority: 2}   # india=8
+- {name: Visa,   ats: workday, token: "visa|wd5|Visa",       category: gcc, priority: 2}   # india=2
+#
+# Found but NOT added:
+#   nvidia|wd5|NvidiaExternalCareerSite — tenant is live with ~2,000 postings,
+#     but the adapter's country facet returns 0 for India. NVIDIA does hire in
+#     Bengaluru and Pune, so this is an adapter/facet mismatch rather than an
+#     empty board. Worth resolving; do not re-guess the tenant, it is correct.
+#   qualcomm|wd12|External — tenant resolves, board reports 0 jobs.
+#   mastercard, autodesk, broadcom, hpe — tenant exists but the site name is not
+#     guessable; read it off the careers page URL to finish these.

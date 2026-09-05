@@ -5,6 +5,11 @@
   token: atlan
   category: product
   priority: 1
+- name: Bureau
+  ats: ashby
+  token: bureau
+  category: fintech
+  priority: 1
 - name: Chronosphere
   ats: ashby
   token: chronospherejobs
@@ -40,6 +45,11 @@
   token: doordashindia
   category: product
   priority: 1
+- name: Druva
+  ats: greenhouse
+  token: druva
+  category: infra
+  priority: 1
 - name: Fi Money
   ats: lever
   token: epifi
@@ -54,6 +64,11 @@
   ats: greenhouse
   token: gitlab
   category: devtools
+  priority: 1
+- name: Glance
+  ats: greenhouse
+  token: glance
+  category: product
   priority: 1
 - name: Grafana Labs
   ats: greenhouse
@@ -75,15 +90,30 @@
   token: meesho
   category: product
   priority: 1
+- name: Micron
+  ats: workday
+  token: micron|wd1|External
+  category: gcc
+  priority: 1
 - name: Mindtickle
   ats: lever
   token: mindtickle
   category: product
   priority: 1
+- name: Netradyne
+  ats: greenhouse
+  token: netradyne
+  category: ai
+  priority: 1
 - name: Netskope
   ats: greenhouse
   token: netskope
   category: security
+  priority: 1
+- name: NICE
+  ats: greenhouse
+  token: nice
+  category: product
   priority: 1
 - name: Nium
   ats: lever
@@ -129,6 +159,11 @@
   ats: ashby
   token: sarvam
   category: product
+  priority: 1
+- name: Sigmoid
+  ats: greenhouse
+  token: sigmoid
+  category: data
   priority: 1
 - name: SigNoz
   ats: ashby
@@ -180,6 +215,11 @@
   token: airwallex
   category: fintech
   priority: 2
+- name: Aviatrix
+  ats: greenhouse
+  token: aviatrix
+  category: infra
+  priority: 2
 - name: BrowserStack
   ats: workday
   token: browserstack|wd3|External
@@ -215,6 +255,16 @@
   token: elastic
   category: observability
   priority: 2
+- name: ElevenLabs
+  ats: ashby
+  token: elevenlabs
+  category: ai
+  priority: 2
+- name: Endor Labs
+  ats: greenhouse
+  token: endorlabs
+  category: security
+  priority: 2
 - name: Freshworks
   ats: lever
   token: freshworks
@@ -235,10 +285,20 @@
   token: komodohealth
   category: health
   priority: 2
+- name: Kong
+  ats: ashby
+  token: kong
+  category: devtools
+  priority: 2
 - name: Level AI
   ats: lever
   token: levelai
   category: product
+  priority: 2
+- name: LogicMonitor
+  ats: greenhouse
+  token: logicmonitor
+  category: observability
   priority: 2
 - name: Lyra Health
   ats: lever
@@ -250,6 +310,11 @@
   token: mongodb
   category: product
   priority: 2
+- name: Nasuni
+  ats: greenhouse
+  token: nasuni
+  category: infra
+  priority: 2
 - name: New Relic
   ats: greenhouse
   token: newrelic
@@ -260,15 +325,30 @@
   token: openai
   category: ai
   priority: 2
+- name: PayPal
+  ats: workday
+  token: paypal|wd1|jobs
+  category: gcc
+  priority: 2
 - name: Porter
   ats: lever
   token: porter
   category: product
   priority: 2
+- name: ScienceLogic
+  ats: ashby
+  token: sciencelogic
+  category: observability
+  priority: 2
 - name: SingleStore
   ats: greenhouse
   token: singlestore
   category: data
+  priority: 2
+- name: Skyflow
+  ats: ashby
+  token: skyflow
+  category: security
   priority: 2
 - name: Snowflake
   ats: ashby
@@ -305,6 +385,11 @@
   token: twilio
   category: product
   priority: 2
+- name: Visa
+  ats: workday
+  token: visa|wd5|Visa
+  category: gcc
+  priority: 2
 - name: Yugabyte
   ats: greenhouse
   token: yugabyte
@@ -340,6 +425,16 @@
   token: astronomer
   category: data
   priority: 3
+- name: Backblaze
+  ats: greenhouse
+  token: backblaze
+  category: infra
+  priority: 3
+- name: Bloomreach
+  ats: greenhouse
+  token: bloomreach
+  category: product
+  priority: 3
 - name: Chainguard
   ats: greenhouse
   token: chainguard
@@ -359,6 +454,26 @@
   ats: greenhouse
   token: cresta
   category: ai
+  priority: 3
+- name: Cribl
+  ats: greenhouse
+  token: cribl
+  category: observability
+  priority: 3
+- name: Deepgram
+  ats: ashby
+  token: deepgram
+  category: ai
+  priority: 3
+- name: Dialpad
+  ats: greenhouse
+  token: dialpad
+  category: product
+  priority: 3
+- name: Fastly
+  ats: greenhouse
+  token: fastly
+  category: infra
   priority: 3
 - name: Figma
   ats: greenhouse
@@ -389,6 +504,16 @@
   ats: greenhouse
   token: inmobi
   category: product
+  priority: 3
+- name: Merkle Science
+  ats: lever
+  token: merklescience
+  category: fintech
+  priority: 3
+- name: MinIO
+  ats: greenhouse
+  token: minio
+  category: infra
   priority: 3
 - name: Navi
   ats: ashby
@@ -435,6 +560,16 @@
   token: slice
   category: product
   priority: 3
+- name: Socket
+  ats: ashby
+  token: socket
+  category: security
+  priority: 3
+- name: Socure
+  ats: ashby
+  token: socure
+  category: fintech
+  priority: 3
 - name: Starburst
   ats: greenhouse
   token: starburst
@@ -450,6 +585,16 @@
   token: temporal
   category: devtools
   priority: 3
+- name: Thoughtworks
+  ats: greenhouse
+  token: thoughtworks
+  category: services
+  priority: 3
+- name: TRM Labs
+  ats: ashby
+  token: trm-labs
+  category: fintech
+  priority: 3
 - name: Vercel
   ats: greenhouse
   token: vercel
@@ -458,5 +603,10 @@
 - name: Wiz
   ats: greenhouse
   token: wizinc
+  category: product
+  priority: 3
+- name: Yext
+  ats: greenhouse
+  token: yext
   category: product
   priority: 3

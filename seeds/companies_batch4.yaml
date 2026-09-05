@@ -1,0 +1,41 @@
+
+# --- Batch 4: added 2026-09-05. Same rule as batch 3 — probed against the
+# live JSON board APIs, kept only where the board answered 200 with at least
+# one India posting. `india=` is the count at discovery.
+#
+# Telecom is deliberately absent. The profile carries a -2.0 penalty for
+# carriers, network equipment vendors and OSS/BSS suppliers, so adding them
+# would only spend the scoring budget on reqs that are pre-destined to fail.
+# Extreme Networks (lever/extremenetworks, 43 India roles) was found live and
+# skipped on exactly that ground — it is a network equipment vendor.
+#
+# Weighted toward the profile's bonus domains: observability / AIOps
+# (LogicMonitor, ScienceLogic, Cribl) and LLM-ML platforms.
+
+- {name: Glance,           ats: greenhouse,  token: glance,            category: product,         priority: 1}   # india=30/48
+- {name: Sigmoid,          ats: greenhouse,  token: sigmoid,           category: data,            priority: 1}   # india=28/33
+- {name: NICE,             ats: greenhouse,  token: nice,              category: product,         priority: 1}   # india=19/176
+- {name: Netradyne,        ats: greenhouse,  token: netradyne,         category: ai,              priority: 1}   # india=18/30
+- {name: Druva,            ats: greenhouse,  token: druva,             category: infra,           priority: 1}   # india=17/44
+- {name: Bureau,           ats: ashby,       token: bureau,            category: fintech,         priority: 1}   # india=16/16
+- {name: Nasuni,           ats: greenhouse,  token: nasuni,            category: infra,           priority: 2}   # india=14/30
+- {name: LogicMonitor,     ats: greenhouse,  token: logicmonitor,      category: observability,   priority: 2}   # india=14/52
+- {name: ElevenLabs,       ats: ashby,       token: elevenlabs,        category: ai,              priority: 2}   # india=10/252
+- {name: Kong,             ats: ashby,       token: kong,              category: devtools,        priority: 2}   # india=10/74
+- {name: Endor Labs,       ats: greenhouse,  token: endorlabs,         category: security,        priority: 2}   # india=8/28
+- {name: ScienceLogic,     ats: ashby,       token: sciencelogic,      category: observability,   priority: 2}   # india=7/10
+- {name: Aviatrix,         ats: greenhouse,  token: aviatrix,          category: infra,           priority: 2}   # india=6/14
+- {name: Skyflow,          ats: ashby,       token: skyflow,           category: security,        priority: 2}   # india=5/9
+- {name: Yext,             ats: greenhouse,  token: yext,              category: product,         priority: 3}   # india=4/22
+- {name: Bloomreach,       ats: greenhouse,  token: bloomreach,        category: product,         priority: 3}   # india=4/74
+- {name: Dialpad,          ats: greenhouse,  token: dialpad,           category: product,         priority: 3}   # india=3/84
+- {name: MinIO,            ats: greenhouse,  token: minio,             category: infra,           priority: 3}   # india=3/21
+- {name: Merkle Science,   ats: lever,       token: merklescience,     category: fintech,         priority: 3}   # india=3/25
+- {name: Deepgram,         ats: ashby,       token: deepgram,          category: ai,              priority: 3}   # india=2/92
+- {name: Socure,           ats: ashby,       token: socure,            category: fintech,         priority: 3}   # india=2/84
+- {name: Fastly,           ats: greenhouse,  token: fastly,            category: infra,           priority: 3}   # india=2/48
+- {name: Backblaze,        ats: greenhouse,  token: backblaze,         category: infra,           priority: 3}   # india=2/36
+- {name: Thoughtworks,     ats: greenhouse,  token: thoughtworks,      category: services,        priority: 3}   # india=1/36
+- {name: Cribl,            ats: greenhouse,  token: cribl,             category: observability,   priority: 3}   # india=1/59
+- {name: TRM Labs,         ats: ashby,       token: trm-labs,          category: fintech,         priority: 3}   # india=1/109
+- {name: Socket,           ats: ashby,       token: socket,            category: security,        priority: 3}   # india=1/23
