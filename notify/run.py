@@ -77,6 +77,10 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     That gate only governs which jobs get scored; a job scored before the gate
     existed, or under a wider ceiling, keeps its score and would otherwise be
     pinged months late.
+
+    The ceiling passed here is deliberately looser than the scoring gate — see
+    max_display_age_days in config/settings.yaml. Tightening it to match the
+    scorer would drop jobs in the window between being scored and being sent.
     """
     headers = db_headers()
     scores = requests.get(
@@ -192,7 +196,15 @@ def main() -> int:
         settings.get("ping_threshold", 6.5))
     dashboard = os.environ.get("DASHBOARD_URL", "")
 
-    max_age = float(settings.get("max_age_days", 0) or 0) or None
+    # The display ceiling, not the scoring gate. Scoring is gated tighter (3
+    # days) so stale reqs never cost a call; delivery gets the wider window so a
+    # job admitted just inside that gate is not dropped unpinged when the run
+    # that would have sent it is delayed. Falls back to max_age_days if the
+    # wider setting is absent, which keeps an old config working.
+    max_age = float(
+        settings.get("max_display_age_days")
+        or settings.get("max_age_days", 0) or 0
+    ) or None
     jobs = pending_jobs(threshold, max_age)
     age_note = f", posted within {max_age:g} days" if max_age else ""
     print(f"{len(jobs)} job(s) at or above {threshold}{age_note} "

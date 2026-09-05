@@ -4,15 +4,20 @@ import { select, effectivePostedAt, hoursSince, type QueueRow } from "./db";
 const THRESHOLD = Number(process.env.PING_THRESHOLD ?? "6.5");
 
 /**
- * Age ceiling for the queue, mirroring max_age_days in config/settings.yaml.
+ * Age ceiling for the queue, mirroring max_display_age_days in
+ * config/settings.yaml — the looser of the two ceilings, not the scoring gate.
  *
- * The scorer's gate and this one do different jobs and neither replaces the
- * other. That gate stops old postings reaching a paid LLM call, but it only
- * ever applies to jobs being scored for the first time — anything already
- * scored keeps its score, deliberately, so that tightening the rule does not
- * erase work already paid for. The consequence is that old jobs scored under
- * the previous rule stay in the queue forever unless the read side filters
- * them too, which is exactly what was showing 101-day-old postings.
+ * Scoring is gated at 3 days so a stale req never costs an LLM call. This is 5,
+ * and the gap is deliberate: scoring is not instant, so a job admitted at 2.9
+ * days needs to stay visible long enough to actually be read. Setting this to
+ * the scoring gate would hide jobs that were just paid for.
+ *
+ * The scorer's gate cannot replace this one either. It only ever applies to
+ * jobs being scored for the first time — anything already scored keeps its
+ * score, deliberately, so that tightening the rule does not erase work already
+ * paid for. Old jobs scored under a previous rule therefore stay in the queue
+ * forever unless the read side filters them too, which is exactly what was
+ * showing 101-day-old postings.
  *
  * 0 disables the filter.
  */

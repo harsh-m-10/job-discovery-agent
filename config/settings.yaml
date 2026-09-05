@@ -21,7 +21,22 @@ max_experience_years: 4
 #
 # When adding a new board, score its first run with --max-age-days 0, or its
 # entire existing catalogue is discarded unscored.
-max_age_days: 5
+max_age_days: 3
+
+# Wider ceiling for *showing* and *pinging* a job that was already scored.
+#
+# These are deliberately not the same number. Scoring is gated at 3 days so a
+# stale req never costs an LLM call; but scoring is not instantaneous — a run
+# can be delayed by GitHub's scheduler (measured average gap ~53 min, sometimes
+# skipped outright) or by a provider backing off. A job admitted at 2.9 days
+# would then be dropped by the notifier before it was ever delivered, which is
+# the one failure this system cannot afford: the job was paid for and judged a
+# match, and then silently discarded.
+#
+# The 2-day gap is the slack. Anything scored inside the 3-day gate has two
+# full days to be pinged and read before the display ceiling hides it.
+# Must be >= max_age_days, or scored jobs become unreachable. 0 disables.
+max_display_age_days: 5
 
 # ---------------------------------------------------------------------------
 # LLM providers, tried in `priority` order. Every limit lives here — nothing is

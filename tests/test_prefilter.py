@@ -16,7 +16,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from score.prefilter import check_title, extract_experience, prefilter
 
@@ -239,6 +240,25 @@ def test_already_scored_still_wins_over_age():
     result = prefilter("Backend Engineer", "", already_scored=True,
                        age_days=40, max_age_days=5)
     assert result.reject_reason == "already_scored"
+
+
+def test_display_ceiling_is_never_tighter_than_the_scoring_gate():
+    """The one way these two settings can be wrong together.
+
+    Scoring is gated tighter than display on purpose, so a job admitted just
+    inside the gate still has time to be pinged and read. Invert them and every
+    job scored in the gap is paid for and then hidden before anyone sees it —
+    silently, with nothing in any log to say so.
+    """
+    import yaml
+    settings = yaml.safe_load(
+        (ROOT / "config" / "settings.yaml").read_text(encoding="utf-8"))
+    gate = float(settings.get("max_age_days", 0) or 0)
+    display = float(settings.get("max_display_age_days", 0) or 0)
+    if gate and display:
+        assert display >= gate, (
+            f"max_display_age_days ({display:g}) is tighter than "
+            f"max_age_days ({gate:g}) — scored jobs would be hidden")
 
 
 if __name__ == "__main__":
