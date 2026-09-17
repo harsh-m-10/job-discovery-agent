@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import requests
 
@@ -42,14 +43,28 @@ def _db():
                               "Content-Type": "application/json"}
 
 
+def _since(hours: float) -> str:
+    """An ISO timestamp `hours` ago, safe to place in a PostgREST query string.
+
+    `isoformat()` ends in "+00:00", and a bare "+" in a URL query is decoded as
+    a space. PostgREST then hands Postgres "2026-09-17T02:19:35 00:00", which is
+    a 400 — and the error body is a JSON *object*, which is truthy. Unquoted,
+    every cooldown check read "already alerted" and every alert was suppressed;
+    the pipeline-dry check read "a job was seen" and never fired. Found
+    2026-09-17; the table held one alert row in its whole history.
+    """
+    return quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+
+
 def _recently_alerted(kind: str) -> bool:
     base, headers = _db()
-    since = (datetime.now(timezone.utc)
-             - timedelta(hours=COOLDOWN_HOURS.get(kind, 6))).isoformat()
-    rows = requests.get(
+    since = _since(COOLDOWN_HOURS.get(kind, 6))
+    resp = requests.get(
         f"{base}/notifications?select=id&channel=eq.alert:{kind}"
-        f"&ok=is.true&sent_at=gte.{since}", headers=headers, timeout=30).json()
-    return bool(rows)
+        f"&ok=is.true&sent_at=gte.{since}", headers=headers, timeout=30)
+    # A rejected query must not masquerade as a prior send. Fail loudly instead.
+    resp.raise_for_status()
+    return bool(resp.json())
 
 
 def _record(kind: str, ok: bool, error: str | None) -> None:
@@ -127,10 +142,11 @@ def check_pipeline_dry(hours: int = DRY_THRESHOLD_HOURS) -> bool:
     else in the system notices.
     """
     base, headers = _db()
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    rows = requests.get(f"{base}/jobs?select=id&first_seen_at=gte.{since}&limit=1",
-                        headers=headers, timeout=30).json()
-    if rows:
+    since = _since(hours)
+    resp = requests.get(f"{base}/jobs?select=id&first_seen_at=gte.{since}&limit=1",
+                        headers=headers, timeout=30)
+    resp.raise_for_status()
+    if resp.json():
         return False
 
     runs = requests.get(

@@ -48,6 +48,9 @@ jobs:
       - name: Referral matching tests
         run: python tests/test_referral.py
 
+      - name: Alert cooldown tests
+        run: python tests/test_alerts.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

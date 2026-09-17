@@ -37,8 +37,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from notify import email as email_channel          # noqa: E402
-from notify.alerts import (alert_ingest_errors, check_pipeline_dry,  # noqa: E402
-                           send_alert)
+from notify.alerts import (_since, alert_ingest_errors,  # noqa: E402
+                           check_pipeline_dry, send_alert)
 
 
 def db():
@@ -137,10 +137,10 @@ def main() -> int:
             findings.append("no new postings in 72h")
     else:
         base, headers = db()
-        since = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
-        fresh = requests.get(f"{base}/jobs?select=id&first_seen_at=gte.{since}&limit=1",
-                             headers=headers, timeout=30).json()
-        if not fresh:
+        resp = requests.get(f"{base}/jobs?select=id&first_seen_at=gte.{_since(72)}&limit=1",
+                            headers=headers, timeout=30)
+        resp.raise_for_status()
+        if not resp.json():
             findings.append("no new postings in 72h")
 
     print()
