@@ -32,3 +32,9 @@ exports/
 config/candidate_profile.yaml
 dashboard/lib/screening.generated.json
 .local/
+
+# --- Internal docs. These live in the private automatedJobBoard repo, not
+# here: the trace quotes real DB rows and the profile's scoring-rule text.
+docs/ARCHITECTURE.md
+docs/TRACE.md
+docs/lld/
