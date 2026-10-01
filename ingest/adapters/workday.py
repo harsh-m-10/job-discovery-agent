@@ -43,6 +43,12 @@ INDIA = re.compile(r"\bindia\b|\bbengaluru\b|\bbangalore\b|\bkarnataka\b|"
 POSTED_DAYS = re.compile(r"(\d+)\+?\s*days?\s*ago", re.I)
 POSTED_TODAY = re.compile(r"posted\s+today|today", re.I)
 
+# India as a whole word, so "Bengaluru, India" and "India Remote" match while
+# "Indiana" (232 postings on Target's state facet) does not: after "india" the
+# "n" is a word character, so \b fails. Exact equality was the previous rule and
+# matched only tenants whose facet is a bare country name.
+INDIA_FACET = re.compile(r"\bindia\b", re.I)
+
 
 def parse_token(board_token: str) -> tuple[str, str, str]:
     parts = board_token.split("|")
@@ -81,24 +87,50 @@ class WorkdayAdapter:
         except ValueError as exc:
             raise BoardFetchError("non-json response") from exc
 
+    @staticmethod
+    def _facet_levels(facet: dict):
+        """Yield (parameter, values) for a facet and its one nested level.
+
+        Tenants expose location two different ways. Target answers with a flat
+        `Location_Country` whose values are country names. Cisco and Micron
+        answer with `locationMainGroup`, a single container value whose own
+        `values` are city-level entries ("Bengaluru, India") under the nested
+        parameter `locations`. Reading only the top level found nothing for the
+        second shape, which is what sent those boards down the unfiltered path.
+        """
+        parameter = facet.get("facetParameter") or ""
+        yield parameter, facet.get("values") or []
+        for value in facet.get("values") or []:
+            nested = value.get("values")
+            if nested:
+                yield (value.get("facetParameter") or parameter), nested
+
     def _india_facet(self, base: str) -> dict[str, list[str]]:
-        """Find this tenant's country-facet id for India.
+        """Find this tenant's location-facet ids for India.
 
         Facet ids are per-tenant, so they are read from the board's own first
-        response rather than hardcoded. Returns an empty dict when no country
-        facet exists, in which case paging falls back to local filtering.
+        response rather than hardcoded. **Every** matching id under the first
+        parameter that yields one is returned: a city-level facet needs all of
+        Bengaluru, Hyderabad, Chennai and the rest, and taking one would filter
+        the board down to a single city.
+
+        Returns an empty dict when no location facet exists, in which case
+        paging falls back to local filtering — see `fetch` for why that is now
+        a loud failure rather than a silent truncation.
         """
         payload = self._post(f"{base}/jobs",
                              {"appliedFacets": {}, "limit": 1, "offset": 0,
                               "searchText": ""})
         for facet in payload.get("facets") or []:
-            parameter = facet.get("facetParameter") or ""
-            if "country" not in parameter.lower() and "location" not in parameter.lower():
-                continue
-            for value in facet.get("values") or []:
-                descriptor = str(value.get("descriptor") or "")
-                if descriptor.strip().lower() == "india" and value.get("id"):
-                    return {parameter: [value["id"]]}
+            for parameter, values in self._facet_levels(facet):
+                lowered = parameter.lower()
+                if "country" not in lowered and "location" not in lowered:
+                    continue
+                ids = [v["id"] for v in values
+                       if v.get("id")
+                       and INDIA_FACET.search(str(v.get("descriptor") or ""))]
+                if ids:
+                    return {parameter: ids}
         return {}
 
     def _detail(self, base: str, external_path: str) -> dict[str, Any]:
@@ -125,15 +157,34 @@ class WorkdayAdapter:
 
         postings: list[dict] = []
         offset = 0
+        total = 0
+        complete = False
         for _ in range(MAX_PAGES):
             payload = self._post(f"{base}/jobs",
                                  {"appliedFacets": facets, "limit": PAGE,
                                   "offset": offset, "searchText": ""})
             page = payload.get("jobPostings") or []
+            total = int(payload.get("total") or 0)
             postings.extend(page)
             offset += PAGE
-            if len(page) < PAGE or offset >= int(payload.get("total") or 0):
+            if len(page) < PAGE or offset >= total:
+                complete = True
                 break
+
+        # A board cut off at the page cap is a *partial* response, and
+        # lifecycle.plan documents that it must never diff against one: every
+        # posting past the cut-off looks withdrawn and is closed, then reopens
+        # on the next run whose ordering differs. That is the whole of the
+        # observed reopen churn on Cisco and Micron, whose boards carry 1,303
+        # and 3,075 postings against an 800 cap. Failing here costs one board
+        # for one run; diffing against it corrupts the history.
+        if not complete:
+            raise BoardFetchError(
+                f"truncated at {len(postings)} of {total} postings "
+                f"({MAX_PAGES} pages x {PAGE}) — "
+                + ("the India facet did not resolve, so the whole board is "
+                   "being paged" if not facets else
+                   "raise MAX_PAGES or narrow the facet"))
 
         out: list[RawJob] = []
         for posting in postings:

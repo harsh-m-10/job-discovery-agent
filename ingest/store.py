@@ -162,13 +162,35 @@ class Store:
         return rows[0]["id"] if rows else None
 
     def finish_run(self, run_id: int | None, *, jobs_seen: int, jobs_new: int,
-                   jobs_closed: int, errors: list[dict]) -> None:
+                   jobs_closed: int, errors: list[dict],
+                   boards: list[dict] | None = None) -> None:
+        """Close out the run_log row.
+
+        `boards` lands in a column added by db/migrations/0004. Code and schema
+        cannot be deployed together here — the migration is pasted into the
+        Supabase SQL editor by hand, while this file reaches the runner on the
+        next cron tick — so a run between the two must not fail. PostgREST
+        answers PGRST204 for an unknown column; that one case retries without
+        it and says so. Every other error still raises.
+        """
         if run_id is None:
             return
-        self._request("PATCH", "run_log", params=f"id=eq.{run_id}", body={
+        body = {
             "finished_at": now_iso(),
             "jobs_seen": jobs_seen,
             "jobs_new": jobs_new,
             "jobs_closed": jobs_closed,
             "errors": errors or None,
-        }, prefer="return=minimal")
+            "boards": boards or None,
+        }
+        try:
+            self._request("PATCH", "run_log", params=f"id=eq.{run_id}",
+                          body=body, prefer="return=minimal")
+        except RuntimeError as exc:
+            if "boards" not in str(exc) or "PGRST204" not in str(exc):
+                raise
+            print("  note: run_log.boards is missing — per-board stats not "
+                  "recorded. Apply db/migrations/0004_run_log_boards.sql.")
+            body.pop("boards")
+            self._request("PATCH", "run_log", params=f"id=eq.{run_id}",
+                          body=body, prefer="return=minimal")

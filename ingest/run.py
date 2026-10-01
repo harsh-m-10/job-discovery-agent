@@ -134,6 +134,11 @@ def main() -> int:
     totals = {"seen": 0, "new": 0, "changed": 0, "reopened": 0, "closed": 0}
     errors: list[dict] = []
     deactivated: list[str] = []
+    # Per-board outcome for every board polled this run. run_log.errors only
+    # ever held raised exceptions, so a board that answered 200 with nothing -
+    # the failure that silently closes a whole company - left no trace at all
+    # and had to be reconstructed afterwards from `jobs` itself.
+    boards: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         results = pool.map(lambda c: fetch_board(c, args.keep_all_locations), due)
@@ -143,6 +148,8 @@ def main() -> int:
         for company, jobs, error in results:
             name = company["name"]
             if error is not None:
+                boards.append({"company": name, "ats": company["ats"],
+                               "token": company["board_token"], "error": error})
                 failures = int(company.get("consecutive_failures") or 0) + 1
                 note = ""
                 if store:
@@ -176,11 +183,31 @@ def main() -> int:
             totals["changed"] += p.n_changed
             totals["reopened"] += p.n_reopened
             totals["closed"] += p.n_closed
+            boards.append({"company": name, "ats": company["ats"],
+                           "token": company["board_token"], "seen": len(jobs),
+                           "new": p.n_new, "changed": p.n_changed,
+                           "reopened": p.n_reopened, "closed": p.n_closed,
+                           "suppressed_closes": p.suppressed_closes})
+
+            # Surfaced as an error so the watchdog emails it. An empty fetch
+            # against a board we hold open rows for is a token or filter
+            # problem, and it is invisible in the queue until the roles are
+            # already gone.
+            if p.suppressed_closes:
+                errors.append({
+                    "company": name, "ats": company["ats"],
+                    "token": company["board_token"],
+                    "error": f"empty fetch would have closed "
+                             f"{p.suppressed_closes} open posting(s) - closes "
+                             f"withheld, board needs checking",
+                })
+
             flags = "".join([
                 f" +{p.n_new} new" if p.n_new else "",
                 f" ~{p.n_changed} edited" if p.n_changed else "",
                 f" ^{p.n_reopened} reopened" if p.n_reopened else "",
                 f" -{p.n_closed} closed" if p.n_closed else "",
+                f" !{p.suppressed_closes} closes withheld" if p.suppressed_closes else "",
             ])
             print(f"  ok   {name:<18} {len(jobs):>3} seen{flags}")
 
@@ -195,7 +222,8 @@ def main() -> int:
 
     if store:
         store.finish_run(run_id, jobs_seen=totals["seen"], jobs_new=totals["new"],
-                         jobs_closed=totals["closed"], errors=errors)
+                         jobs_closed=totals["closed"], errors=errors,
+                         boards=boards)
 
     # A run that failed on some boards is still a successful run — exit non-zero
     # only if nothing at all got through, which means something systemic.

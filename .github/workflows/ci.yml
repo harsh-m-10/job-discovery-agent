@@ -51,6 +51,9 @@ jobs:
       - name: Alert cooldown tests
         run: python tests/test_alerts.py
 
+      - name: Workday facet and truncation tests
+        run: python tests/test_workday.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

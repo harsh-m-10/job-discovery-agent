@@ -28,6 +28,10 @@ class Plan:
     n_new: int = 0
     n_changed: int = 0
     n_reopened: int = 0
+    #: Closes withheld because the fetch that produced them looked broken
+    #: rather than empty. Non-zero means the caller should record an error:
+    #: the board needs a human, and the rows were deliberately left open.
+    suppressed_closes: int = 0
 
     @property
     def n_closed(self) -> int:
@@ -86,9 +90,23 @@ def plan(company_id: int, seen: list[RawJob], existing: dict[str, dict]) -> Plan
     # A board fetch is authoritative: anything still open that the board no
     # longer lists is gone. This only holds because the whole board is fetched
     # every time — never diff against a partial or filtered response.
-    result.close_ids = [
+    closes = [
         row["id"]
         for ats_job_id, row in existing.items()
         if ats_job_id not in seen_ids and row.get("closed_at") is None
     ]
+
+    # ...and "the whole board" is exactly what an empty-but-successful fetch is
+    # not. Greenhouse, Lever and Ashby all answer 200 with an empty list when a
+    # token stops resolving to the intended tenant, and the India filter in
+    # run.py can empty a good fetch on its own. Neither raises, so without this
+    # guard one bad response closes every open role on the board and the next
+    # good run reopens them all - 125 such whole-minute groups covering 574
+    # rows were already in the database when this was written. A board that has
+    # genuinely gone to zero stays open one run longer and is reported instead;
+    # that is much the cheaper mistake.
+    if closes and not seen:
+        result.suppressed_closes = len(closes)
+    else:
+        result.close_ids = closes
     return result

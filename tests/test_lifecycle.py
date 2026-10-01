@@ -64,13 +64,55 @@ def test_edited_job_upserts_and_counts_as_changed():
 
 
 def test_disappeared_job_closes():
-    p = plan(1, [], existing())
+    # One role withdrawn from a board that still lists others. The fetch has to
+    # be non-empty: an empty one is the ambiguous case guarded below.
+    stored = existing()
+    stored.update(existing(job_id="2", pk=11))
+    p = plan(1, [job("2")], stored)
     assert p.close_ids == [10] and p.n_closed == 1
 
 
 def test_already_closed_job_is_not_closed_twice():
-    p = plan(1, [], existing(closed_at="2026-01-01T00:00:00Z"))
+    stored = existing(closed_at="2026-01-01T00:00:00Z")
+    stored.update(existing(job_id="2", pk=11))
+    p = plan(1, [job("2")], stored)
     assert p.close_ids == []
+
+
+def test_an_empty_fetch_never_closes_a_board():
+    """The expensive failure, and the reason suppressed_closes exists.
+
+    Greenhouse, Lever and Ashby all answer 200 with an empty list when a token
+    stops resolving, and run.py's India filter can empty a good fetch by
+    itself. Neither raises, so an unguarded diff closes every open role and the
+    next good run reopens them all. Measured before the guard: 574 rows in 125
+    groups sharing one company and one close minute.
+    """
+    stored = existing()
+    stored.update(existing(job_id="2", pk=11))
+    p = plan(1, [], stored)
+    assert p.close_ids == [], "an empty fetch closed the board"
+    assert p.n_closed == 0
+    assert p.suppressed_closes == 2
+
+
+def test_an_empty_fetch_against_an_empty_board_is_not_an_alarm():
+    # Nothing stored, nothing fetched: no closes to withhold, so no error.
+    p = plan(1, [], {})
+    assert p.close_ids == [] and p.suppressed_closes == 0
+
+
+def test_an_empty_fetch_with_only_closed_rows_is_not_an_alarm():
+    # Already-closed rows are not candidates, so there is nothing to suppress.
+    p = plan(1, [], existing(closed_at="2026-01-01T00:00:00Z"))
+    assert p.close_ids == [] and p.suppressed_closes == 0
+
+
+def test_a_normal_close_does_not_set_suppressed_closes():
+    stored = existing()
+    stored.update(existing(job_id="2", pk=11))
+    p = plan(1, [job("2")], stored)
+    assert p.suppressed_closes == 0
 
 
 def test_reopened_job_increments_count_and_clears_closed_at():
