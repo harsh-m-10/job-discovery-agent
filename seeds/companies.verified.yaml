@@ -10,11 +10,6 @@
   token: bureau
   category: fintech
   priority: 1
-- name: Chronosphere
-  ats: ashby
-  token: chronospherejobs
-  category: observability
-  priority: 1
 - name: Coinbase
   ats: greenhouse
   token: coinbase
@@ -134,11 +129,6 @@
   ats: greenhouse
   token: payoneer
   category: fintech
-  priority: 1
-- name: Postman
-  ats: greenhouse
-  token: postman
-  category: product
   priority: 1
 - name: Pure Storage
   ats: greenhouse
@@ -406,7 +396,7 @@
   category: health
   priority: 2
 - name: Amplitude
-  ats: greenhouse
+  ats: ashby
   token: amplitude
   category: product
   priority: 3
@@ -486,7 +476,7 @@
   category: product
   priority: 3
 - name: Hightouch
-  ats: greenhouse
+  ats: ashby
   token: hightouch
   category: data
   priority: 3
