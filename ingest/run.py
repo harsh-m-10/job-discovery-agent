@@ -69,17 +69,18 @@ def is_due(company: dict, force: bool) -> bool:
     return datetime.now(timezone.utc) - last_dt >= timedelta(minutes=gap)
 
 
-def fetch_board(company: dict, keep_all_locations: bool = False) -> tuple[dict, list[RawJob] | None, str | None]:
-    """-> (company, jobs, error). Never raises; the caller tallies failures."""
+def fetch_board(company: dict, keep_all_locations: bool = False
+                ) -> tuple[dict, list[RawJob] | None, str | None, bool]:
+    """-> (company, jobs, error, transient). Never raises; the caller tallies."""
     try:
         jobs = get_adapter(company["ats"]).fetch(company["board_token"])
     except BoardFetchError as exc:
-        return company, None, str(exc)
+        return company, None, str(exc), getattr(exc, "transient", False)
     except Exception as exc:  # an adapter bug must not take the run down
-        return company, None, f"adapter error: {type(exc).__name__}: {exc}"
+        return company, None, f"adapter error: {type(exc).__name__}: {exc}", False
     if not keep_all_locations:
         jobs = [j for j in jobs if is_india_relevant(j.location, j.description)]
-    return company, jobs, None
+    return company, jobs, None, False
 
 
 def companies_from_seeds() -> list[dict]:
@@ -145,11 +146,26 @@ def main() -> int:
 
         # Fetches run concurrently; persistence stays serial so a single board's
         # write failure is attributable and cannot half-apply another's diff.
-        for company, jobs, error in results:
+        for company, jobs, error, transient in results:
             name = company["name"]
             if error is not None:
                 boards.append({"company": name, "ats": company["ats"],
-                               "token": company["board_token"], "error": error})
+                               "token": company["board_token"], "error": error,
+                               "transient": transient})
+
+                # A brief outage must not retire a healthy board. It is still
+                # recorded and still alerts; it simply does not count toward
+                # the five-strike cutoff, and the failure streak is left where
+                # it was rather than reset, so a board that is genuinely dying
+                # still gets there.
+                if transient:
+                    errors.append({"company": name, "ats": company["ats"],
+                                   "token": company["board_token"],
+                                   "error": f"{error} [transient, not counted "
+                                            f"toward deactivation]"})
+                    print(f"  WARN {name}: {error} (transient)")
+                    continue
+
                 failures = int(company.get("consecutive_failures") or 0) + 1
                 note = ""
                 if store:

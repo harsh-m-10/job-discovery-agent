@@ -33,12 +33,15 @@ def get_json(url: str, timeout: int = 20):
     try:
         resp = session().get(url, timeout=timeout)
     except requests.RequestException as exc:
-        raise BoardFetchError(f"{type(exc).__name__}: {exc}") from exc
+        # The network, not the board. urllib3 has already retried twice.
+        raise BoardFetchError(f"{type(exc).__name__}: {exc}", transient=True) from exc
     if resp.status_code == 404:
         raise BoardFetchError("board not found (404) — token may have changed")
+    if resp.status_code >= 500:
+        raise BoardFetchError(f"http {resp.status_code}", transient=True)
     if resp.status_code != 200:
         raise BoardFetchError(f"http {resp.status_code}")
     try:
         return resp.json()
     except ValueError as exc:
-        raise BoardFetchError("non-json response") from exc
+        raise BoardFetchError("non-json response", transient=True) from exc

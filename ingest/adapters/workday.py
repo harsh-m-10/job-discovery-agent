@@ -70,7 +70,8 @@ class WorkdayAdapter:
                          "Content-Type": "application/json"},
             )
         except requests.RequestException as exc:
-            raise BoardFetchError(f"{type(exc).__name__}: {exc}") from exc
+            raise BoardFetchError(f"{type(exc).__name__}: {exc}",
+                                  transient=True) from exc
 
         # 404 means the tenant is real but the site name is wrong; 422 means the
         # tenant/host pair itself is wrong. Both are token errors, not outages.
@@ -78,14 +79,19 @@ class WorkdayAdapter:
             raise BoardFetchError("site name wrong for this tenant (404)")
         if resp.status_code == 422:
             raise BoardFetchError("tenant not on this wd host (422)")
+        if resp.status_code >= 500:
+            raise BoardFetchError(f"http {resp.status_code}", transient=True)
         if resp.status_code != 200:
             raise BoardFetchError(f"http {resp.status_code}")
         if "application/json" not in resp.headers.get("content-type", ""):
-            raise BoardFetchError("got the SPA shell, not the API")
+            # Workday's maintenance window: the tenant answers 200 with the SPA
+            # shell for every request. It hits a whole wd host at once and is
+            # gone by the next run. See BoardFetchError for the dates.
+            raise BoardFetchError("got the SPA shell, not the API", transient=True)
         try:
             return resp.json()
         except ValueError as exc:
-            raise BoardFetchError("non-json response") from exc
+            raise BoardFetchError("non-json response", transient=True) from exc
 
     @staticmethod
     def _facet_levels(facet: dict):

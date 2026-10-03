@@ -96,11 +96,11 @@
 - {name: Included Health,       ats: lever,       token: includedhealth,          category: health,         priority: 3}   # india=3/147
 - {name: StarTree,              ats: greenhouse,  token: startree,                category: data,           priority: 3}   # india=3/4
 - {name: Temporal,              ats: ashby,       token: temporal,                category: devtools,       priority: 3}   # india=3/64
-- {name: Amplitude,             ats: greenhouse,  token: amplitude,               category: product,        priority: 3}   # india=2/37
+- {name: Amplitude,             ats: ashby,       token: amplitude,               category: product,        priority: 3}   # india=2/37  # moved greenhouse->ashby 2026-10-03, old token 404
 - {name: Figma,                 ats: greenhouse,  token: figma,                   category: product,        priority: 3}   # india=2/157
 - {name: Salesloft,             ats: greenhouse,  token: salesloft,               category: product,        priority: 3}   # india=2/35
 - {name: Apollo.io,             ats: greenhouse,  token: apolloio,                category: product,        priority: 3}   # india=1/39
 - {name: Astronomer,            ats: ashby,       token: astronomer,              category: data,           priority: 3}   # india=1/21
-- {name: Hightouch,             ats: greenhouse,  token: hightouch,               category: data,           priority: 3}   # india=1/81
+- {name: Hightouch,             ats: ashby,       token: hightouch,               category: data,           priority: 3}   # india=1/81  # moved greenhouse->ashby 2026-10-03, old token 404
 - {name: Neon,                  ats: ashby,       token: neon,                    category: data,           priority: 3}   # india=1/6
 - {name: Scale AI,              ats: greenhouse,  token: scaleai,                 category: ai,             priority: 3}   # india=1/215
