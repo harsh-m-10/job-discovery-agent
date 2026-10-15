@@ -72,6 +72,10 @@ jobs:
       - name: Dispatch token expiry tests
         run: python tests/test_token_watch.py
 
+      - name: Cloudflare standby dispatcher tests
+        # Node is preinstalled on ubuntu-latest; node:test needs no packages.
+        run: node --test infra/cf-standby/src/index.test.mjs
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 
