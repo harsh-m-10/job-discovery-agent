@@ -1,0 +1,158 @@
+name: backup
+
+# Nightly encrypted backup (docs/PLAN.md Phase 0.1).
+#
+# Supabase's free tier keeps no backups, and this database is the only copy of
+# everything the project has learned -- including 1,118 people's contact
+# details, which is why the dump is encrypted before it leaves the runner and
+# lands in a PRIVATE repository, never as an artifact of this public one.
+#
+#   dump  ->  restore into a scratch Postgres and verify every table's count
+#         ->  encrypt with age to the recipient in config/backup_recipient.txt
+#         ->  push to harsh-m-10/job-agent-backups as one orphan commit
+#             holding only the newest 30 dumps
+#
+# The orphan commit matters: encrypted dumps do not delta-compress, so deleting
+# old files in a normal commit would leave them in history and grow the repo by
+# ~8 MB a night forever. Replacing history each night keeps it at ~30 dumps.
+#
+# Until it is configured (see "configured" below) every run is a no-op that
+# says what is missing. Setup: docs/RUNBOOK.md, "Backups".
+
+on:
+  schedule:
+    # 20:41 UTC = 02:11 IST, off the hour, clear of the Workday window.
+    - cron: "41 20 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      scratch:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: scratch
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SCRATCH_URL: postgresql://postgres:scratch@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check configuration
+        id: cfg
+        env:
+          DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+        run: |
+          missing=""
+          [ -n "$SUPABASE_DB_PASSWORD" ] || missing="$missing SUPABASE_DB_PASSWORD(secret)"
+          [ -n "$DEPLOY_KEY" ] || missing="$missing BACKUP_DEPLOY_KEY(secret)"
+          grep -q '^age1' config/backup_recipient.txt 2>/dev/null \
+            || missing="$missing config/backup_recipient.txt(age public key)"
+          if [ -n "$missing" ]; then
+            echo "::warning::backup not configured, nothing backed up. Missing:$missing"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install pg 17 client and age
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          # The server is Postgres 17; pg_dump refuses to dump a newer server,
+          # and ubuntu-latest ships 16. PGDG's own installer adds the repo.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-common age
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-python@v5
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          python-version: "3.11"
+
+      - name: Python dependencies
+        if: steps.cfg.outputs.ready == 'true'
+        run: pip install "psycopg2-binary>=2.9.9"
+
+      - name: Dump
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          stamp=$(date -u +%Y-%m-%dT%H%MZ)
+          echo "NAME=job-agent-$stamp" >> "$GITHUB_ENV"
+          python scripts/backup.py dump --out "job-agent-$stamp.dump" \
+            --counts "job-agent-$stamp.counts.json"
+
+      - name: Restore into scratch Postgres and verify
+        # A dump that has not been restored is not a backup. This runs on every
+        # dump; nothing is kept unless it passes.
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          python scripts/backup.py verify --dump "$NAME.dump" \
+            --counts "$NAME.counts.json" --target "$SCRATCH_URL"
+
+      - name: Encrypt
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          age -R config/backup_recipient.txt -o "$NAME.dump.age" "$NAME.dump"
+          shred -u "$NAME.dump" "$NAME.dump.toc" 2>/dev/null || rm -f "$NAME.dump" "$NAME.dump.toc"
+          ls -l "$NAME.dump.age"
+
+      - name: Push to the private backup repository
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/backup_key && chmod 600 ~/.ssh/backup_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_key -o IdentitiesOnly=yes"
+
+          git clone --depth 1 git@github.com:harsh-m-10/job-agent-backups.git store \
+            || { mkdir store && git -C store init -q -b main \
+                 && git -C store remote add origin git@github.com:harsh-m-10/job-agent-backups.git; }
+          cp "$NAME.dump.age" "$NAME.counts.json" store/
+          cd store
+          # Keep the newest 30 dumps. Names sort chronologically.
+          ls -1 job-agent-*.dump.age | sort | head -n -30 | while read -r old; do
+            rm -f "$old" "${old%.dump.age}.counts.json"
+          done
+          git config user.name "job-agent backup"
+          git config user.email "backup@users.noreply.github.com"
+          git checkout -q --orphan snapshot
+          git add -A
+          git commit -q -m "backup $NAME ($(ls -1 *.dump.age | wc -l) dumps kept)"
+          git push -q --force origin snapshot:main
+          echo "kept: $(ls -1 *.dump.age | wc -l) dumps, $(du -sh --exclude=.git . | cut -f1)"
+
+      # Plain curl, not notify.heartbeat: a failure during tool installation
+      # happens before Python and its packages exist, and that is exactly a
+      # failure the monitor must hear about. Never fails the job itself.
+      - name: Heartbeat (success)
+        if: success() && steps.cfg.outputs.ready == 'true'
+        env:
+          HC_PING_URL: ${{ secrets.HC_BACKUP_PING_URL }}
+        run: |
+          [ -z "$HC_PING_URL" ] && { echo "HC_BACKUP_PING_URL not set"; exit 0; }
+          curl -fsS -m 10 --retry 3 "$HC_PING_URL" >/dev/null || echo "heartbeat not delivered"
+
+      - name: Heartbeat (failure)
+        if: failure()
+        env:
+          HC_PING_URL: ${{ secrets.HC_BACKUP_PING_URL }}
+        run: |
+          [ -z "$HC_PING_URL" ] && { echo "HC_BACKUP_PING_URL not set"; exit 0; }
+          curl -fsS -m 10 --retry 3 --data-raw             "backup run ${GITHUB_RUN_ID} failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"             "$HC_PING_URL/fail" >/dev/null || echo "heartbeat not delivered"
