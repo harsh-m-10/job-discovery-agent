@@ -29,6 +29,8 @@ PRIMARY_KEY = {
     "applications": "id",
     "notifications": "id",
     "run_log": "id",
+    "trigger_log": "id",
+    "alert_inbox": "id",
     "application_events": "id",
     "referral_asks": "id",
     "v_funnel": "application_id",

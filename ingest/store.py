@@ -18,7 +18,10 @@ import requests
 from common.company_key import company_key
 from common.paging import stable_order
 
-LAYER1_TABLES = {"companies", "jobs", "run_log"}
+# trigger_log (0016) is pipeline telemetry. alert_inbox (0018) holds job-alert
+# mail -- job ads, the input of a Layer 1 source -- forwarded from the
+# operator's Gmail; Layer 1 reads the ads out of it and nothing else.
+LAYER1_TABLES = {"companies", "jobs", "run_log", "trigger_log", "alert_inbox"}
 PAGE = 1000
 
 # run_log columns that a migration adds and that the deployed schema may not
@@ -110,8 +113,11 @@ class Store:
         return self._select_all(
             "companies",
             "select=id,name,ats,board_token,category,priority,last_ok_at,"
-            "consecutive_failures&active=eq.true&order=priority.asc,name.asc",
+            "consecutive_failures&active=eq.true&ats=neq.aggregator"
+            "&order=priority.asc,name.asc",
         )
+        # ats=aggregator rows are companies seen only through Indeed or a job
+        # alert (db/migrations/0018). There is no board to poll.
 
     def fill_missing_company_keys(self) -> int:
         """Give every company without a company_key one (db/migrations/0009).
