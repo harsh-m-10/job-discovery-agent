@@ -87,15 +87,21 @@ llm_providers:
   # Same vendor, different model. Slower but independent of whatever makes the
   # flash-lite endpoint wobble, so it is worth a try before leaving Google.
   - name: google-flash3
+    # Reasoning model: it spends output tokens thinking before answering, so
+    # the old 500/job budget ran out first -- an empty or truncated reply on
+    # every real scoring call, while the healthcheck ping still said "live".
+    # Found by `score.healthcheck --deep` on 2026-10-15; these values were
+    # measured to score a fixture batch correctly. The output ceiling is
+    # min(4096, per_job x batch + 200), hence the small batch.
     priority: 3
     model: gemini-3-flash-preview
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     api_key_env: GOOGLE_API_KEY
     rpm: 10
     tpm: 250000
-    batch_size: 5
+    batch_size: 3
     max_chars: 4000
-    max_output_tokens_per_job: 500
+    max_output_tokens_per_job: 1200
     json_mode: true
     enabled: true
     timeout: 120
@@ -180,15 +186,22 @@ llm_providers:
     timeout: 120
 
   - name: openrouter
+    # Reasoning model: it spends output tokens thinking before answering, so
+    # the old 500/job budget ran out first -- an empty or truncated reply on
+    # every real scoring call, while the healthcheck ping still said "live".
+    # Found by `score.healthcheck --deep` on 2026-10-15; these values were
+    # measured to score a fixture batch correctly. Same model as
+    # `nvidia`; its thinking length varies, so it gets the same budget. The output ceiling is
+    # min(4096, per_job x batch + 200), hence the small batch.
     priority: 5
     model: nvidia/nemotron-3-super-120b-a12b:free   # 15.0s, 5/5
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
     rpm: 15                            # free models are rate-limited hard
     tpm: 0
-    batch_size: 5
+    batch_size: 1
     max_chars: 4000
-    max_output_tokens_per_job: 500
+    max_output_tokens_per_job: 2500
     json_mode: true
     enabled: true
     timeout: 120
@@ -200,15 +213,21 @@ llm_providers:
   # with valid JSON — faster than the model it replaces, hence the promotion
   # from 6 to 2.
   - name: nvidia
+    # Reasoning model: it spends output tokens thinking before answering, so
+    # the old 500/job budget ran out first -- an empty or truncated reply on
+    # every real scoring call, while the healthcheck ping still said "live".
+    # Found by `score.healthcheck --deep` on 2026-10-15; these values were
+    # measured to score a fixture batch correctly. The output ceiling is
+    # min(4096, per_job x batch + 200), hence the small batch.
     priority: 2
     model: nvidia/nemotron-3-super-120b-a12b   # 5.3s, valid JSON
     base_url: https://integrate.api.nvidia.com/v1
     api_key_env: NVIDIA_API_KEY
     rpm: 30
     tpm: 0
-    batch_size: 5
+    batch_size: 1
     max_chars: 4000
-    max_output_tokens_per_job: 500
+    max_output_tokens_per_job: 2500
     json_mode: true
     enabled: true
     timeout: 120

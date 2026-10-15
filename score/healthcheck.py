@@ -96,9 +96,55 @@ def check(provider: ChatProvider) -> Health:
         return Health(provider.name, cfg.model, False, str(exc)[:110], model_listed)
 
 
-def run(providers: list[ChatProvider], fail_fast: bool = True) -> list[Health]:
-    """Check every provider, log the result, and raise if none are usable."""
-    results = [check(p) for p in providers]
+# A fixed, realistic posting for the deep check (PLAN 7.5). Mid-range on
+# purpose: a model that answers but returns no fit_score, an out-of-range one,
+# or unparseable JSON fails here rather than silently mid-run.
+FIXTURE_JOB = {
+    "id": 900000001,
+    "title": "Backend Engineer (Python)",
+    "location": "Bengaluru, India",
+    "companies": {"name": "Fixture Corp", "category": "product", "headcount_band": "mid"},
+    "description": (
+        "We are hiring a Backend Engineer to build payment APIs.\n"
+        "Requirements:\n- 2-4 years of experience with Python\n"
+        "- PostgreSQL and REST API design\n- Experience with AWS or GCP\n"
+        "Nice to have: Kafka, Kubernetes.\n"
+        "You will own services end to end and work with product and data teams."
+    ),
+}
+
+
+def deep_check(provider: ChatProvider) -> Health:
+    """A real scoring call on FIXTURE_JOB, through the same parser and schema
+    validation a run uses. Reachability is not enough: a model can answer the
+    ping and still return something score_batch cannot use."""
+    shallow = check(provider)
+    if not shallow.live:
+        return shallow
+    from .llm import _attempt, build_system_prompt
+    try:
+        rows = _attempt(provider, [FIXTURE_JOB], build_system_prompt(),
+                        provider.cfg.max_chars, attempts=1)
+    except Exception as exc:
+        return Health(provider.name, provider.cfg.model, False,
+                      f"scoring call failed: {str(exc)[:90]}", shallow.model_listed)
+    score = rows[0].get("fit_score") if rows else None
+    if score is None or not 0 <= float(score) <= 10:
+        return Health(provider.name, provider.cfg.model, False,
+                      f"scoring call returned no usable fit_score ({score!r})",
+                      shallow.model_listed)
+    return Health(provider.name, provider.cfg.model, True,
+                  f"ok (scored fixture {float(score):g})", shallow.model_listed)
+
+
+def run(providers: list[ChatProvider], fail_fast: bool = True,
+        deep: bool = False) -> list[Health]:
+    """Check every provider, log the result, and raise if none are usable.
+
+    deep=True makes a real scoring call per provider (the daily workflow);
+    the pre-run check in score.run stays a cheap ping.
+    """
+    results = [deep_check(p) if deep else check(p) for p in providers]
 
     print("provider healthcheck:")
     for h in results:
@@ -135,7 +181,7 @@ if __name__ == "__main__":
     from score.llm import default_providers
 
     try:
-        run(default_providers(), fail_fast=True)
+        run(default_providers(), fail_fast=True, deep="--deep" in sys.argv)
     except RuntimeError as exc:
         print(f"\n{exc}", file=sys.stderr)
         raise SystemExit(2)

@@ -29,10 +29,29 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Probe every configured provider
-        # No candidate profile needed: this sends a fixed toy payload and only
-        # asks whether the model answers. A failure here turns the run red, and
-        # GitHub's default workflow-failure notification is the alert.
+      - name: Materialise the candidate profile
+        # The deep check scores a fixture posting with the real prompt, which
+        # is built from the profile. Same handling as ingest.yml: written to
+        # the runner temp dir, outside the working tree; only its size printed.
+        env:
+          CANDIDATE_PROFILE_B64: ${{ secrets.CANDIDATE_PROFILE_B64 }}
+        run: |
+          if [ -z "$CANDIDATE_PROFILE_B64" ]; then
+            echo "::error::CANDIDATE_PROFILE_B64 is not set — the deep check cannot run"
+            exit 1
+          fi
+          printf '%s' "$CANDIDATE_PROFILE_B64" | base64 -d \
+            > "$RUNNER_TEMP/candidate_profile.yaml"
+          echo "CANDIDATE_PROFILE_PATH=$RUNNER_TEMP/candidate_profile.yaml" \
+            >> "$GITHUB_ENV"
+          echo "profile: $(wc -c < "$RUNNER_TEMP/candidate_profile.yaml") bytes"
+
+      - name: Score a fixture posting with every configured provider
+        # --deep makes a real scoring call per provider through the same parser
+        # a run uses (PLAN 7.5). A ping is not enough: on 2026-10-15 five
+        # providers answered the ping and only two could actually score -- the
+        # reasoning models were out of output budget before they answered.
+        # A failure turns the run red; GitHub's failure notification is the alert.
         env:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
@@ -42,4 +61,4 @@ jobs:
           NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: python -m score.healthcheck
+        run: python -m score.healthcheck --deep
