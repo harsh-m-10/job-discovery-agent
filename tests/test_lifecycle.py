@@ -290,6 +290,24 @@ def test_the_run_lease():
     assert set(TRIGGER_SOURCES) == {"cronjob", "cf-standby", "schedule", "manual"}
 
 
+def test_a_fetch_with_duplicate_ids_is_refused_not_diffed():
+    import ingest.run as run_mod
+
+    class Dup:
+        def fetch(self, token):
+            return [job("1"), job("2"), job("1")]
+
+    real = run_mod.get_adapter
+    run_mod.get_adapter = lambda ats: Dup()
+    try:
+        _, jobs, error, transient = run_mod.fetch_board(
+            {"ats": "x", "board_token": "t", "name": "X"})
+    finally:
+        run_mod.get_adapter = real
+    assert jobs is None and transient, "an unstable board must be skipped, not diffed"
+    assert "duplicate" in error
+
+
 def test_date_parsers():
     assert parse_iso("2026-03-04T00:02:52.786+00:00").year == 2026
     assert parse_iso("2026-03-04T00:02:52Z").tzinfo is not None

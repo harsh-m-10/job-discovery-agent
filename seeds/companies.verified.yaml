@@ -566,6 +566,11 @@
   token: ServiceNow
   category: product
   priority: 2
+- name: Standard Chartered
+  ats: successfactors
+  token: jobs.standardchartered.com|en_GB
+  category: gcc
+  priority: 3
 - name: Adobe
   ats: workday
   token: adobe|wd5|external_experienced

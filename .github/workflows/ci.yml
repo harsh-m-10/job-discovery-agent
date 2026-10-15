@@ -84,6 +84,9 @@ jobs:
       - name: SmartRecruiters adapter tests
         run: python tests/test_smartrecruiters.py
 
+      - name: SuccessFactors adapter tests
+        run: python tests/test_successfactors.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

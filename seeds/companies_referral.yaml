@@ -36,6 +36,18 @@
 # it names the ATS behind it. 336 India postings via the Workday India facet.
 - {name: Hewlett Packard Enterprise, ats: workday, token: "hpe|wd5|Jobsathpe", category: gcc, priority: 2}   # india=336; 10 contacts
 #
-# - {name: Standard Chartered, ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 2}
+#
+# STANDARD CHARTERED RESOLVED 2026-10-15. jobs.standardchartered.com is SAP
+# SuccessFactors Career Site Builder, not Workday; new adapter
+# ingest/adapters/successfactors.py. 344 India postings, ~40 of them
+# engineering. Priority 3: every posting page is ~126 KB of HTML.
+- {name: Standard Chartered, ats: successfactors, token: "jobs.standardchartered.com|en_GB", category: gcc, priority: 3}   # 9 contacts
+#
+# ORACLE: its public site (eeho.fa.us2.oraclecloud.com, siteNumber CX_45001,
+# Oracle Recruiting Cloud) answers without auth but is ~2,355 postings with
+# India absent from every location facet -- a "Bangalore" search returns US
+# roles. Oracle's India hiring is on some other site. Manual step: open any
+# Oracle India posting (from LinkedIn or Naukri) and read the apply URL; its
+# siteNumber is what is needed.
 # - {name: Societe Generale,   ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 3}
 # - {name: Infosys,            ats: workday, token: "TENANT|wdN|SITE", category: services, priority: 3}

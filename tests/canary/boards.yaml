@@ -42,6 +42,11 @@
   token: "Freshworks"
   min_postings: 12         # 37 on 2026-10-15 (India, filtered server-side)
 
+- ats: successfactors
+  company: Standard Chartered
+  token: "jobs.standardchartered.com|en_GB"
+  min_postings: 140        # 344 on 2026-10-15 (India search, sorted by date)
+
 - ats: workday
   company: Target
   token: "target|wd5|targetCareers"

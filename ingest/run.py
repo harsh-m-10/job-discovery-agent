@@ -110,6 +110,17 @@ def fetch_board(company: dict, keep_all_locations: bool = False
         return company, None, str(exc), getattr(exc, "transient", False)
     except Exception as exc:  # an adapter bug must not take the run down
         return company, None, f"adapter error: {type(exc).__name__}: {exc}", False
+    # The same posting twice means the board's pagination is unstable, and an
+    # unstable order that repeats rows also skips others -- so the fetch is
+    # short as well as doubled. Diffing it would close the skipped postings.
+    # Found on Standard Chartered (SuccessFactors) on 2026-10-15, where it
+    # surfaced only as a PostgREST 500 on the upsert.
+    ids = [j.ats_job_id for j in jobs]
+    if len(set(ids)) != len(ids):
+        dupes = len(ids) - len(set(ids))
+        return (company, None,
+                f"{dupes} duplicate posting id(s) in one fetch — pagination order is "
+                f"unstable, so postings are also missing; not diffed", True)
     if not keep_all_locations:
         jobs = [j for j in jobs if is_india_relevant(j.location, j.description)]
     return company, jobs, None, False

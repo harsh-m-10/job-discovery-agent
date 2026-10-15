@@ -7,6 +7,7 @@ from .ashby import AshbyAdapter
 from .greenhouse import GreenhouseAdapter
 from .lever import LeverAdapter
 from .smartrecruiters import SmartRecruitersAdapter
+from .successfactors import SuccessFactorsAdapter
 from .workday import WorkdayAdapter
 
 ADAPTERS: dict[str, ATSAdapter] = {
@@ -15,6 +16,7 @@ ADAPTERS: dict[str, ATSAdapter] = {
     "ashby": AshbyAdapter(),
     "workday": WorkdayAdapter(),
     "smartrecruiters": SmartRecruitersAdapter(),
+    "successfactors": SuccessFactorsAdapter(),
 }
 
 
