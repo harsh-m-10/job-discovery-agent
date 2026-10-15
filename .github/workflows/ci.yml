@@ -78,6 +78,9 @@ jobs:
       - name: Role family classifier tests
         run: python tests/test_role.py
 
+      - name: Outcome capture tests
+        run: python tests/test_outcomes.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

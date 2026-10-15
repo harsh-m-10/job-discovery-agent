@@ -112,6 +112,12 @@ jobs:
           DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
         run: python -m notify.run
 
+      - name: Process outcome emails
+        # Classifies and matches emails posted by apps_script/outcomes.gs and
+        # updates application status (docs/PLAN.md 4.3). Cheap when there is
+        # nothing pending; tolerates the table not existing.
+        run: python -m outcomes.run
+
       - name: Watchdog
         # Runs even when an earlier step failed — a failed run is precisely
         # when the alert matters most. Silent death is the main long-term risk.
