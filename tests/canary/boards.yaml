@@ -1,0 +1,43 @@
+# tests/canary/boards.yaml — one known-good live board per adapter.
+#
+# Phase 0.4 of docs/PLAN.md. These exist to answer one question the rest of the
+# system cannot: has an upstream ATS changed its API shape? That failure is
+# dangerous precisely because it is quiet. An adapter that starts returning
+# empty lists, or postings with a renamed date field, does not raise — it looks
+# exactly like "no new jobs this week", and the empty-fetch guard then does its
+# job and suppresses the closes, so nothing goes red. The corpus just silently
+# stops growing.
+#
+# Choosing a board:
+#   * big enough that `min_postings` is a real assertion, not a tautology;
+#   * small enough to fetch quickly — the Workday adapter costs roughly 0.7s
+#     per posting because it fetches each posting's detail, so Micron (292
+#     postings, 208s) is a bad canary and Target (39 postings, 33s) is a good
+#     one, despite Micron being the larger board;
+#   * stable: a company that has hired in India continuously, so a drop to
+#     zero means the adapter broke rather than the company paused hiring.
+#
+# `min_postings` is set near 40% of the count observed on 2026-10-15, which
+# tolerates ordinary fluctuation and a hiring freeze while still catching a
+# collapse. Note the Workday adapter applies its India facet server-side, so
+# its count is already India-only; the other three return the whole board.
+
+- ats: greenhouse
+  company: Okta
+  token: "okta"
+  min_postings: 150        # 373 on 2026-10-15
+
+- ats: lever
+  company: Meesho
+  token: "meesho"
+  min_postings: 20         # 59 on 2026-10-15
+
+- ats: ashby
+  company: Sarvam AI
+  token: "sarvam"
+  min_postings: 12         # 42 on 2026-10-15
+
+- ats: workday
+  company: Target
+  token: "target|wd5|targetCareers"
+  min_postings: 12         # 39 on 2026-10-15 (India facet, applied server-side)

@@ -29,8 +29,12 @@ ALERT_KINDS = {
     "ingest_errors": -1,
     "pipeline_dry": -2,
     "providers_exhausted": -3,
+    "adapter_schema": -4,
 }
-COOLDOWN_HOURS = {"ingest_errors": 6, "pipeline_dry": 24, "providers_exhausted": 6}
+# adapter_schema runs on a daily canary, so a 20h cooldown lets each day's run
+# speak once without re-alerting if the canary is also triggered by hand.
+COOLDOWN_HOURS = {"ingest_errors": 6, "pipeline_dry": 24,
+                  "providers_exhausted": 6, "adapter_schema": 20}
 DRY_THRESHOLD_HOURS = 72
 
 

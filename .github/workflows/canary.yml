@@ -1,0 +1,41 @@
+name: canary
+
+on:
+  schedule:
+    # Once a day at 02:17 UTC. The minute is off the hour because GitHub drops
+    # scheduled runs hardest at :00, and the hour is chosen to sit clear of the
+    # Workday maintenance window that has repeatedly landed between 06:37 and
+    # 07:57 UTC (see ingest/models.py) — a canary that fires inside that window
+    # would warn about Workday several times a quarter for no reason.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    # The Workday adapter fetches each posting's detail, so the four boards
+    # together take roughly 70s. 15 minutes is slack for a slow upstream, not
+    # an expectation.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Fetch one live board per adapter and validate its shape
+        # --alert needs the database (cooldown bookkeeping in `notifications`)
+        # and an email transport. A hard failure both turns this run red and
+        # emails; the red run is the backstop if the email path is itself broken.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+        run: python tests/canary/run.py --alert
