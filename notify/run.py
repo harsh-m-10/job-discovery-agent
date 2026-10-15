@@ -8,9 +8,10 @@ Deduplication is the whole job here. A job is pinged at most once in its
 lifetime, enforced by a lookup against `notifications` rather than by timing, so
 a delayed or repeated GitHub Actions run cannot double-send.
 
-Every match goes out at once on two channels (decided 2026-10-15): an ntfy.sh
-push and one email from a non-Gmail sender, subject "[JOB 8.4] ..." -- see
-notify/instant.py. Each job gets its own `notifications` row per channel, so
+Every match goes out at once (decided 2026-10-15, revised 2026-10-16): an
+ntfy.sh push per job, and one email per run listing all of the run's matches
+from a non-Gmail sender, subject "[JOB 8.4] ... (+N more)" -- see
+notify/instant.py. Only jobs in the operator's city (job_scores.location_ok). Each job gets its own `notifications` row per channel, so
 dedupe stays per job. A job neither channel takes, or one over
 max_pings_per_day, goes into a single overflow digest for the run rather than
 being dropped. The once-a-day summary is notify/daily.py.
@@ -235,7 +236,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     headers = db_headers()
     scores = get_all(
         f"job_scores?select=job_id,fit_score,min_years,max_years,"
-        f"matched_skills,gap_skills,reasoning,provisional&fit_score=gte.{threshold}",
+        f"matched_skills,gap_skills,reasoning,provisional&fit_score=gte.{threshold}"
+        f"&location_ok=is.true",
         headers)
     if not scores:
         return []
@@ -402,40 +404,48 @@ def main() -> int:
     # take them. Collected so one run produces at most one digest.
     for_email: list[tuple[dict, str]] = []
 
+    # Pushes go per job; the email is one per run (decided 2026-10-16).
+    batch: list[dict] = []
+    pushed: dict[int, str | None] = {}          # job_id -> push error, or None
     for job in jobs:
         if budget is not None and budget <= 0:
             for_email.append((job, f"daily ping cap ({cap}) reached"))
             continue
-        delivered, why = [], []
-        if instant.ntfy_configured():
-            try:
-                instant.send_ntfy(instant.ntfy_payload(job, dashboard))
-                record(job["job_id"], "ntfy", True, None)
-                delivered.append("ntfy")
-            except Exception as exc:
-                record(job["job_id"], "ntfy", False, str(exc))
-                why.append(f"ntfy: {exc}")
-        else:
-            why.append("ntfy: NTFY_TOPIC not set")
+        if budget is not None:
+            budget -= 1
+        batch.append(job)
+        if not instant.ntfy_configured():
+            pushed[job["job_id"]] = "ntfy: NTFY_TOPIC not set"
+            continue
+        try:
+            instant.send_ntfy(instant.ntfy_payload(job, dashboard))
+            record(job["job_id"], "ntfy", True, None)
+            pushed[job["job_id"]] = None
+        except Exception as exc:
+            record(job["job_id"], "ntfy", False, str(exc))
+            pushed[job["job_id"]] = f"ntfy: {exc}"
+
+    emailed, email_error = False, None
+    if batch:
         if instant.email_transport():
             try:
-                via = instant.send_email(job, dashboard)
-                record(job["job_id"], "email-instant", True, None)
-                delivered.append(f"email/{via}")
+                via = instant.send_email(batch, dashboard)
+                emailed = True
+                print(f"  match email: {len(batch)} job(s) in one mail via {via}")
             except Exception as exc:
-                record(job["job_id"], "email-instant", False, str(exc))
-                why.append(f"email: {exc}")
+                email_error = f"email: {exc}"
         else:
-            why.append("email: no transport configured")
-
-        if delivered:
-            sent += 1
-            if budget is not None:
-                budget -= 1
-            print(f"  {'+'.join(delivered):<20} {job['fit_score']} {job['title'][:48]}")
-        else:
-            print(f"  FAILED  {job['title'][:48]}: {'; '.join(why)[:110]}")
-            for_email.append((job, "; ".join(why)))
+            email_error = "email: no transport configured"
+        for job in batch:
+            jid = job["job_id"]
+            if instant.email_transport():
+                record(jid, "email-instant", emailed, email_error)
+            if emailed or pushed.get(jid) is None:
+                sent += 1
+                print(f"  {'push ' if pushed.get(jid) is None else ''}"
+                      f"{'mail' if emailed else ''}  {job['fit_score']} {job['title'][:48]}")
+            else:
+                for_email.append((job, "; ".join(x for x in (pushed.get(jid), email_error) if x)))
 
     # One digest for everything the instant channels did not deliver. Dedupe is
     # still keyed per job, so every job in it gets its own notifications row.

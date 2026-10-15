@@ -138,6 +138,28 @@ class ScoreStore:
         except Exception as exc:
             print(f"  provider ledger not written: {type(exc).__name__}: {exc}")
 
+    def sync_location_flags(self, rule) -> int:
+        """Set job_scores.location_ok = rule(location, description) for every
+        open, scored job; PATCH only the rows that change. -> rows changed."""
+        rows = self._get("job_scores", "select=job_id,location_ok,"
+                         "jobs!inner(location,description,closed_at)"
+                         "&fit_score=not.is.null&jobs.closed_at=is.null")
+        flip: dict[bool, list[int]] = {True: [], False: []}
+        for r in rows:
+            job = r.get("jobs") or {}
+            want = bool(rule(job.get("location"), job.get("description") or ""))
+            if want != bool(r.get("location_ok", True)):
+                flip[want].append(r["job_id"])
+        for value, ids in flip.items():
+            for i in range(0, len(ids), 300):
+                chunk = ",".join(str(j) for j in ids[i:i + 300])
+                resp = self.session.patch(
+                    f"{self.url}/rest/v1/job_scores?job_id=in.({chunk})",
+                    data=json.dumps({"location_ok": value}),
+                    headers={"Prefer": "return=minimal"}, timeout=60)
+                resp.raise_for_status()
+        return len(flip[True]) + len(flip[False])
+
     def upsert_scores(self, rows: list[dict[str, Any]]) -> None:
         if not rows:
             return

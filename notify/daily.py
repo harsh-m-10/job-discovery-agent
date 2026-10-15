@@ -43,8 +43,9 @@ def collect(now: datetime | None = None) -> dict:
     if pinged:
         ids = ",".join(str(i) for i in sorted(pinged))
         rows = get_all(f"v_queue?select=job_id,title,company,location,absolute_url,fit_score,"
-                       f"provisional,status&job_id=in.({ids})", h)
-    queued = get_all(f"v_queue?select=job_id&status=eq.queued&fit_score=gte.{threshold}", h)
+                       f"provisional,status&location_ok=is.true&job_id=in.({ids})", h)
+    queued = get_all(f"v_queue?select=job_id&status=eq.queued&location_ok=is.true"
+                     f"&fit_score=gte.{threshold}", h)
     return {"now": now, "threshold": threshold, "pinged": len(pinged), "rows": rows,
             "queued": len(queued)}
 

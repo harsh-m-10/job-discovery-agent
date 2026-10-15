@@ -128,7 +128,8 @@ export async function getQueue(): Promise<QueueRow[]> {
   const [rowsFromView, referrals] = await Promise.all([
     select<QueueViewRow>(
       "v_queue",
-      `select=*&fit_score=gte.${THRESHOLD}&status=eq.queued${ageFilter}`,
+      // location_ok: the operator's city, kept by score/run.py (migration 0019).
+      `select=*&fit_score=gte.${THRESHOLD}&status=eq.queued&location_ok=is.true${ageFilter}`,
     ),
     referralIndex(),
   ]);

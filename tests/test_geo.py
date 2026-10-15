@@ -152,6 +152,18 @@ def test_a_missing_config_falls_back_rather_than_matching_nothing():
     assert names_india("Lucknow"), "cache was not restored to the real config"
 
 
+def test_the_operators_city_bengaluru_and_bangalore_are_one_place():
+    from common.geo import in_preferred_location as ok
+    assert ok("Bengaluru, Karnataka, India") and ok("Bangalore") and ok("BLR")
+    assert ok("KA, India"), "how Indeed writes Bengaluru"
+    assert ok("Bangalore, India, New Delhi, India, Mumbai, India"), "multi-city that includes it"
+    assert not ok("Pune, Maharashtra") and not ok("Hyderabad") and not ok("Gurugram")
+    assert not ok("Kalyan, Maharashtra"), "whole words only"
+    assert ok("Remote, India"), "remote in India can be done from Bengaluru"
+    assert not ok("Remote"), "remote with no India is Remote-US"
+    assert ok("", "Our office in Bangalore") and not ok("", "Our office in Pune")
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

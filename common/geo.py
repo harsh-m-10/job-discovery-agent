@@ -137,3 +137,52 @@ def is_india_relevant(location: str | None, description: str = "") -> bool:
 def _reset_cache_for_tests() -> None:
     """Drop the compiled pattern so a test can swap the keyword list."""
     india_pattern.cache_clear()
+    _preferred.cache_clear()
+
+# --- the operator's city (Layer 2 preference; decided 2026-10-16) -------------
+#
+# is_india_relevant stays the Layer 1 gate: the public board is India-wide.
+# Which city the operator will actually work in is a preference, applied only
+# by the scoring and delivery layers (score/run.py, notify/, the dashboard via
+# job_scores.location_ok). Settings: config/settings.yaml:preferred_location.
+
+FALLBACK_PREFERRED = ("bengaluru", "bangalore", "blr", "karnataka", "ka")
+
+
+def _load_preferred() -> tuple[tuple[str, ...], bool]:
+    try:
+        raw = (yaml.safe_load(SETTINGS.read_text(encoding="utf-8")) or {}).get(
+            "preferred_location") or {}
+    except (OSError, yaml.YAMLError):
+        raw = {}
+    words = tuple(str(w).strip().lower() for w in raw.get("keywords") or []
+                  if str(w or "").strip()) or FALLBACK_PREFERRED
+    return words, bool(raw.get("include_remote_india", True))
+
+
+@functools.lru_cache(maxsize=1)
+def _preferred() -> tuple[re.Pattern[str], bool]:
+    words, remote = _load_preferred()
+    words = sorted(set(words), key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")\b", re.I), remote
+
+
+def in_preferred_location(location: str | None, description: str = "") -> bool:
+    """True if a posting can be worked from the operator's city.
+
+    The city named anywhere in the location string counts, so a multi-city
+    Workday posting that lists Bangalore among five passes. "KA, India" is how
+    Indeed writes Bengaluru. Remote-in-India passes when include_remote_india
+    is on, since it can be done from Bengaluru. With no location string the
+    description decides, as it does for the India gate.
+    """
+    pattern, remote_ok = _preferred()
+    loc = (location or "").strip()
+    head = (description or "")[:DESCRIPTION_SCAN_CHARS]
+    if not loc:
+        return pattern.search(head) is not None
+    if pattern.search(loc):
+        return True
+    if remote_ok and is_remote(loc) and is_india_relevant(loc, description):
+        return True
+    return False

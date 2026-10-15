@@ -38,6 +38,7 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from ingest.normalize import is_india_relevant   # noqa: E402
+from common.geo import in_preferred_location     # noqa: E402
 from score.llm import (USAGE, AllProvidersExhausted, ScoringError,  # noqa: E402
                        apply_headcount_penalty, build_system_prompt,
                        default_providers, score_batch)
@@ -185,6 +186,15 @@ def main() -> int:
     if max_age:
         print(f"age gate: skipping postings older than {max_age:g} days")
     store = ScoreStore()
+    if not args.report:
+        # Before scoring, so a run that has nothing new still re-applies the
+        # city rule to everything already scored (db/migrations/0019).
+        try:
+            flipped = store.sync_location_flags(in_preferred_location)
+            if flipped:
+                print(f"location: {flipped} scored job(s) changed location_ok")
+        except Exception as exc:
+            print(f"location: flags not synced ({type(exc).__name__}: {exc})")
     try:
         return _main(args, store, max_years, penalties, max_age)
     finally:
@@ -314,7 +324,9 @@ def _main(args, store, max_years, penalties, max_age) -> int:
     for job in jobs:
         result = prefilter(
             job["title"], job.get("description") or "",
-            location_ok=is_india_relevant(job.get("location"), job.get("description") or ""),
+            # India (the board's gate) and the operator's city (2026-10-16).
+            location_ok=is_india_relevant(job.get("location"), job.get("description") or "")
+            and in_preferred_location(job.get("location"), job.get("description") or ""),
             max_experience_years=max_years,
             age_days=job_age_days(job),
             max_age_days=max_age,

@@ -385,3 +385,13 @@ aggregator:
       - generative ai engineer
       - data engineer
       - platform engineer
+
+# The operator's city (decided 2026-10-16: Bengaluru only). Layer 2 only --
+# ingestion stays India-wide. Jobs elsewhere are rejected before scoring
+# (reason "location") and kept out of pings, digests and the dashboard queue
+# via job_scores.location_ok. A posting that lists Bengaluru among several
+# cities counts. "ka" is Indeed's "KA, India". Remote-in-India counts while
+# include_remote_india is true; set it false for office-in-Bengaluru only.
+preferred_location:
+  keywords: [bengaluru, bangalore, blr, karnataka, ka]
+  include_remote_india: true
