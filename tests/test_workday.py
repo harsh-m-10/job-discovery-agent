@@ -153,6 +153,67 @@ def run_fetch_with_detail(detail: dict):
         adapter._post, adapter._detail = original_post, original_detail  # type: ignore[method-assign]
 
 
+def test_a_tenant_that_reports_total_only_on_page_one_is_read_in_full():
+    """wd5 tenants answer total=N on offset 0 and total=0 afterwards. Before
+    the fix such boards stopped at 2 pages (40 postings) and called it done."""
+    total = 93                                   # Visa, 2026-10-15
+    rows = [{"title": f"Role {i}", "externalPath": f"/job/{i}",
+             "locationsText": "Bengaluru, India", "bulletFields": [f"R{i}"]}
+            for i in range(total)]
+
+    def post(url, body, timeout=30):
+        if body.get("limit") == 1:
+            return {"facets": [{"facetParameter": "Location_Country",
+                                "values": [{"id": "IN", "descriptor": "India"}]}]}
+        off = body["offset"]
+        return {"jobPostings": rows[off:off + PAGE], "total": total if off == 0 else 0}
+
+    original_post, original_detail = adapter._post, adapter._detail
+    try:
+        adapter._post = post                                  # type: ignore[method-assign]
+        adapter._detail = lambda base, path: {"jobReqId": path.rsplit("/", 1)[1]}  # type: ignore[method-assign]
+        jobs = adapter.fetch("visa|wd5|Visa")
+    finally:
+        adapter._post, adapter._detail = original_post, original_detail  # type: ignore[method-assign]
+    assert len(jobs) == total, f"read {len(jobs)} of {total}"
+    assert [j.ats_job_id for j in jobs] == [str(i) for i in range(total)], "order must be kept"
+
+
+def test_a_multi_location_posting_gets_its_real_places():
+    """Listed as "2 Locations"; without the detail's places the India gate
+    dropped it although Workday's India facet had selected it."""
+    posting = [{"title": "Engineer", "externalPath": "/job/1",
+                "locationsText": "2 Locations", "bulletFields": ["R1"]}]
+
+    def post(url, body, timeout=30):
+        if body.get("limit") == 1:
+            return {"facets": [{"facetParameter": "Location_Country",
+                                "values": [{"id": "IN", "descriptor": "India"}]}]}
+        return {"jobPostings": posting if body["offset"] == 0 else [], "total": 1}
+
+    original_post, original_detail = adapter._post, adapter._detail
+    try:
+        adapter._post = post                                  # type: ignore[method-assign]
+        adapter._detail = lambda base, path: {               # type: ignore[method-assign]
+            "jobReqId": "R1", "location": "Bangalore", "additionalLocations": ["Noida"],
+            "country": {"descriptor": "India"}}
+        [job] = adapter.fetch("adobe|wd5|external_experienced")
+    finally:
+        adapter._post, adapter._detail = original_post, original_detail  # type: ignore[method-assign]
+    assert job.location == "Bangalore, Noida, India", job.location
+    from common.geo import is_india_relevant
+    assert is_india_relevant(job.location, "")
+
+
+def test_a_single_location_string_is_never_rewritten():
+    """Rewriting ordinary locations would change every stored content_hash."""
+    import ingest.adapters.workday as wd_mod
+    for loc in ("Bengaluru, India", "Hyderabad", "IN - Remote - IND", "Locations"):
+        assert not wd_mod.MULTI_LOCATION.match(loc), loc
+    for loc in ("2 Locations", "6 Locations", "1 Location"):
+        assert wd_mod.MULTI_LOCATION.match(loc), loc
+
+
 def test_a_date_only_start_date_is_flagged_as_a_date():
     [job] = run_fetch_with_detail({"startDate": "2026-10-15", "jobReqId": "R1"})
     assert job.posted_at is not None and job.posted_at.hour == 0

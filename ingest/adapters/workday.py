@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import requests
@@ -46,6 +47,8 @@ PAGE = 20                 # Workday caps the listing page size
 # headroom. Exceeding it raises a *transient* error: a slow day must not count
 # toward deactivation, and a partial board is never returned for diffing.
 BOARD_BUDGET_S = 420
+DETAIL_WORKERS = 4
+MULTI_LOCATION = re.compile(r"^\s*\d+\s+locations?\s*$", re.I)
 MAX_PAGES = 40            # guard: a facet that fails to narrow must not run away
 # The private city list that used to live here is gone: the one place it was
 # used -- the fallback row filter in fetch(), for when a tenant exposes no
@@ -197,7 +200,15 @@ class WorkdayAdapter:
                                  {"appliedFacets": facets, "limit": PAGE,
                                   "offset": offset, "searchText": ""})
             page = payload.get("jobPostings") or []
-            total = int(payload.get("total") or 0)
+            # Tenants on wd5 (HPE, Visa, Target, Adobe) report `total` on the
+            # first page only and 0 on every later one. Taking each page's
+            # value at face value made `offset >= total` true on page two, so
+            # those boards stopped at 40 postings and were marked complete:
+            # measured 2026-10-15, Visa 93 India postings -> 40 ingested,
+            # Target 64 -> 40, Adobe 56 -> 40. Pages also come back in varying
+            # order, so each run saw a different 40 -- closing and reopening
+            # jobs. The first page's total is the board's total.
+            total = max(total, int(payload.get("total") or 0))
             postings.extend(page)
             offset += PAGE
             if len(page) < PAGE or offset >= total:
@@ -219,7 +230,7 @@ class WorkdayAdapter:
                    "being paged" if not facets else
                    "raise MAX_PAGES or narrow the facet"))
 
-        out: list[RawJob] = []
+        todo: list[tuple[str, str, str, dict]] = []
         for posting in postings:
             external_path = posting.get("externalPath") or ""
             location = clean_text(posting.get("locationsText") or "")
@@ -231,9 +242,36 @@ class WorkdayAdapter:
             # happen, so drop non-India rows before paying for a detail fetch.
             if not facets and not names_india(location):
                 continue
+            todo.append((external_path, location, title, posting))
 
-            over_budget(f"after {len(out)} of {len(postings)} details")
-            detail = self._detail(base, external_path)
+        # Detail calls are the whole cost of a Workday board (~0.7s each), and
+        # were made one at a time: Micron took 208s and HPE would take ~235s,
+        # which made the slowest Workday tenant the critical path of every run.
+        # A few in parallel cut that by about the worker count. Kept modest,
+        # because _detail turns any failure (a 429 included) into an empty
+        # posting, so hammering a tenant would cost data quality, not just
+        # politeness.
+        def fetch_detail(item: tuple[str, str, str, dict]) -> dict[str, Any]:
+            over_budget(f"while fetching {len(todo)} details")
+            return self._detail(base, item[0])
+
+        with ThreadPoolExecutor(max_workers=DETAIL_WORKERS) as pool:
+            details = list(pool.map(fetch_detail, todo))
+
+        out: list[RawJob] = []
+        for (external_path, location, title, posting), detail in zip(todo, details):
+            # A multi-location posting is listed as just "2 Locations", which
+            # names no city, so the India gate dropped it even though Workday's
+            # own India facet had selected it: 34 postings on Adobe and HPE
+            # alone, measured 2026-10-15. The detail has the real places.
+            # Only these strings are rewritten -- every other posting keeps its
+            # listing location, so no stored content_hash changes.
+            if MULTI_LOCATION.match(location):
+                places = [detail.get("location") or "",
+                          *(detail.get("additionalLocations") or []),
+                          (detail.get("country") or {}).get("descriptor") or ""]
+                location = ", ".join(dict.fromkeys(p.strip() for p in places if p and p.strip())) \
+                    or location
             description = html_to_text(detail.get("jobDescription"))
             # startDate is a bare calendar day on every tenant measured
             # (1,470 of 1,470 rows at midnight UTC), so record it as such:

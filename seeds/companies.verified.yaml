@@ -581,6 +581,11 @@
   token: cisco|wd5|cisco_Careers
   category: gcc
   priority: 2
+- name: Hewlett Packard Enterprise
+  ats: workday
+  token: hpe|wd5|Jobsathpe
+  category: gcc
+  priority: 2
 - name: Micron
   ats: workday
   token: micron|wd1|External

@@ -28,7 +28,14 @@
 # confirmed from a sample posting.
 
 # - {name: Oracle,             ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 2}
-# - {name: HPE,                ats: workday, token: "hpe|wd5|SITE",    category: gcc, priority: 2}
+#
+# HPE RESOLVED 2026-10-15. careers.hpe.com is a Phenom front end; every posting's
+# applyUrl points at hpe.wd5.myworkdayjobs.com/Jobsathpe, which is the site name
+# that was "not guessable" above. Lesson for the rest of this list: open any
+# Phenom (or other front-end) career site's posting and read the apply link --
+# it names the ATS behind it. 336 India postings via the Workday India facet.
+- {name: Hewlett Packard Enterprise, ats: workday, token: "hpe|wd5|Jobsathpe", category: gcc, priority: 2}   # india=336; 10 contacts
+#
 # - {name: Standard Chartered, ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 2}
 # - {name: Societe Generale,   ats: workday, token: "TENANT|wdN|SITE", category: gcc, priority: 3}
 # - {name: Infosys,            ats: workday, token: "TENANT|wdN|SITE", category: services, priority: 3}
