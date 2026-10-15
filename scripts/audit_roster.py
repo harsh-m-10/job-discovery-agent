@@ -40,7 +40,7 @@ from outcomes.run import Db                       # noqa: E402
 def suspects(db: Db) -> list[dict]:
     """Active, fetched successfully at least once, and no job ever stored."""
     companies = db.get_all("companies?select=id,name,ats,board_token,last_ok_at"
-                           "&active=is.true&last_ok_at=not.is.null")
+                           "&active=is.true&last_ok_at=not.is.null&ats=neq.aggregator")
     produced = {r["company_id"] for r in db.get_all("jobs?select=company_id")}
     return [c for c in companies if c["id"] not in produced]
 

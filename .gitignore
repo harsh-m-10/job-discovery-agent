@@ -42,3 +42,8 @@ docs/STATE.md
 docs/PLAN.md
 docs/DECISIONS.md
 docs/RUNBOOK.md
+
+# --- Apps Script deploy (clasp). _local_config.gs carries the dashboard secret
+# and the dispatch token into install(); .clasp.json names the script project.
+apps_script/_local_config.gs
+apps_script/.clasp.json

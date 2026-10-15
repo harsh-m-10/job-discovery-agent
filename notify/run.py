@@ -252,7 +252,7 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     ids = ",".join(str(s["job_id"]) for s in wanted)
     jobs = get_all(
         f"jobs?select=id,title,location,absolute_url,compensation,"
-        f"posted_at,posted_at_precision,role_family,first_seen_at,companies(name)"
+        f"posted_at,posted_at_precision,role_family,first_seen_at,source,companies(name)"
         f"&closed_at=is.null&id=in.({ids})",
         headers)
     job_by_id = {j["id"]: j for j in jobs}
@@ -281,6 +281,7 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
                 hours, date_only=job.get("posted_at_precision") == "date"),
             "age_hours": hours,
             "role_family": job.get("role_family"),
+            "source": job.get("source") or "ats",
             "resume_variant": variants.get(job.get("role_family") or ""),
             "fit_score": score.get("fit_score"),
             # Phase 3.2/7.4: a rules score is a guess; the ping says so.

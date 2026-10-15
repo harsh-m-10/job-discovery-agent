@@ -39,7 +39,7 @@ HEADER = (
 
 def main() -> int:
     rows = Db().get_all("companies?select=name,ats,board_token,category,priority"
-                        "&active=is.true&order=ats.asc,name.asc")
+                        "&active=is.true&ats=neq.aggregator&order=ats.asc,name.asc")
     entries = [{"name": r["name"], "ats": r["ats"], "token": r["board_token"],
                 "category": r["category"], "priority": r["priority"]} for r in rows]
     OUT.write_text(HEADER + yaml.safe_dump(entries, sort_keys=False, allow_unicode=True),

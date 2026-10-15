@@ -68,6 +68,16 @@ jobs:
           TRIGGER_SOURCE: ${{ inputs.source || 'schedule' }}
         run: python -m ingest.run --source "$TRIGGER_SOURCE"
 
+      - name: Job-alert emails and aggregator expiry
+        # Drains alert_inbox (LinkedIn / Naukri / Indeed alert mail forwarded
+        # by apps_script/outcomes.gs) into jobs, tagged source=alert-email, so
+        # they are scored and pinged by the steps below like any other job.
+        # Also closes aggregator postings unseen for ttl_days. Never fails the
+        # run: board ingestion above is the part that must not be held up.
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: python -m ingest.aggregate --inbox --ttl
+
       - name: Materialise the candidate profile
         # The profile is not in this repository — it carries compensation and
         # employer facts and the repo is public. It arrives as a secret and is

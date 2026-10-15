@@ -81,7 +81,7 @@ def collect(now: datetime | None = None) -> dict:
         "events": safe(f"application_events?select=kind,match_state&received_at=gte.{since}"),
         "asks": safe(f"referral_asks?select=outcome,asked_at&asked_at=gte.{since}"),
         "inactive": safe("companies?select=name&active=is.false"),
-        "active": safe("companies?select=id&active=is.true"),
+        "active": safe("companies?select=id&active=is.true&ats=neq.aggregator"),
         "usage": safe(f"provider_usage?select=provider,jobs_scored,quota_exhausted,errors"
                       f"&day=gte.{since[:10]}"),
     }

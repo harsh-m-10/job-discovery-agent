@@ -99,6 +99,12 @@ jobs:
       - name: Daily digest tests
         run: python tests/test_daily.py
 
+      - name: Job-alert email parser tests
+        run: python tests/test_alert_parse.py
+
+      - name: Aggregator (Indeed + alert email) planning tests
+        run: python tests/test_aggregate.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

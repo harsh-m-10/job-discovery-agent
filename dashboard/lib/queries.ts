@@ -611,6 +611,7 @@ export async function getCompanies() {
   return select(
     "companies",
     "select=id,name,ats,board_token,category,priority,active,last_ok_at," +
-      "consecutive_failures&order=active.desc,consecutive_failures.desc,name.asc",
+      "consecutive_failures&ats=neq.aggregator" +
+      "&order=active.desc,consecutive_failures.desc,name.asc",
   );
 }

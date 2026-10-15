@@ -363,3 +363,25 @@ fetch_concurrency: 8
 referral_warmth:
   batch_years: [2021, 2025]
   near_batch_years: [2020, 2026]
+
+# Sources that are not ATS boards (PLAN 6.7; decided 2026-10-15). See
+# ingest/aggregate.py. Indeed is searched hourly through python-jobspy with no
+# login; volume is kept low on purpose (terms x results_wanted per hour).
+# Job-alert emails need no settings here: forward them to the Gmail label
+# job/alerts and apps_script/outcomes.gs does the rest. Neither source is ever
+# closed on absence -- only after ttl_days without a sighting.
+aggregator:
+  ttl_days: 21
+  indeed:
+    enabled: true
+    location: India
+    hours_old: 2
+    results_wanted: 15
+    pause_seconds: 4
+    search_terms:
+      - software engineer
+      - backend engineer
+      - machine learning engineer
+      - generative ai engineer
+      - data engineer
+      - platform engineer

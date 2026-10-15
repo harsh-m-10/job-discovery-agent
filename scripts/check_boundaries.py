@@ -48,9 +48,17 @@ DUPLICATED_LOGIC = re.compile(
 # on, so the constraint is checked mechanically rather than trusted to memory.
 # Matched only in URL position — the codebase legitimately discusses LinkedIn in
 # prose, since the connections CSV is a first-party export from it.
+#
+# Revised 2026-10-15 (PLAN 6.7). Indeed is reached only through python-jobspy in
+# ingest/aggregate.py -- no login, low volume -- so it is no longer listed.
+# LinkedIn and Naukri jobs now arrive as alert *emails* the operator receives;
+# the code still never contacts either host, which is what this enforces.
+# tests/ is exempt: alert-email fixtures necessarily contain those links as
+# data, and a test never makes a request.
 BANNED_HOSTS = re.compile(
-    r"https?://[^\s\"'<>]*?(linkedin\.com|naukri\.com|indeed\.com|glassdoor\.)", re.I
+    r"https?://[^\s\"'<>]*?(linkedin\.com|naukri\.com|glassdoor\.)", re.I
 )
+BANNED_HOSTS_EXEMPT = ROOT / "tests"
 
 SKIP_DIRS = {".venv", "node_modules", ".next", "__pycache__", ".git", "scratchpad"}
 
@@ -137,6 +145,8 @@ def main() -> int:
     for path in all_source():
         # This checker names the banned hosts by definition; exempt itself.
         if path.resolve() == Path(__file__).resolve():
+            continue
+        if BANNED_HOSTS_EXEMPT in path.resolve().parents:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
         for match in BANNED_HOSTS.finditer(text):

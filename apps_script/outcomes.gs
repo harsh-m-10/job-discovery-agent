@@ -8,14 +8,12 @@
  * Script properties (Project Settings -> Script properties):
  *   DASHBOARD_URL     https://<your-vercel-app>.vercel.app   (no trailing path)
  *   DASHBOARD_SECRET  the dashboard secret (same as DASHBOARD_SECRET on Vercel)
- *   STALE_MINUTES     optional; watchdog threshold, default 360. Set it to 45
- *                     once the 15-minute dispatch trigger is live.
+ *   STALE_MINUTES     optional; watchdog threshold, default 45.
  *
- * Triggers (Triggers -> Add trigger, time-driven):
- *   syncOutcomes      every 30 minutes
- *   checkPipeline     every 30 minutes
- * Run once by hand:
- *   backfillOutcomes  sends the last 30 days, including Trash
+ * Triggers: run install() (pipeline.gs) once; it creates them all
+ * (syncOutcomes and checkPipeline every 30 minutes, standbyDispatch and
+ * syncAlerts every 15) and runs backfillOutcomes, which sends the last 30
+ * days including Trash.
  */
 
 // A nested Gmail label "job/outcome" is searched as "job-outcome".
@@ -121,7 +119,9 @@ function backfillOutcomes() {
  */
 function checkPipeline() {
   var cfg = props_();
-  var stale = Number(cfg.props.getProperty('STALE_MINUTES') || 360);
+  // 45: past the standby's 25-minute threshold plus one 15-minute tick, so the
+  // standby gets its chance before anyone is mailed.
+  var stale = Number(cfg.props.getProperty('STALE_MINUTES') || 45);
   var problem = null, age = null;
   try {
     var res = UrlFetchApp.fetch(cfg.url + '/api/health', {
