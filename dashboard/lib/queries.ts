@@ -69,8 +69,14 @@ export type Application = {
 async function referralIndex() {
   const contacts = await select<{
     id: number; full_name: string; company_norm: string | null;
-    title: string | null; is_batchmate: boolean | null;
-  }>("connections", "select=id,full_name,company_norm,title,is_batchmate");
+    title: string | null; is_batchmate: boolean | null; profile_url: string | null;
+  }>(
+    "connections",
+    // Batchmates first, then most recent connection: the presentation half of
+    // score/referral.py:rank_matches, which also weighs title fit.
+    "select=id,full_name,company_norm,title,is_batchmate,profile_url" +
+      "&order=is_batchmate.desc.nullslast,connected_on.desc.nullslast",
+  );
 
   const byCompany = new Map<string, typeof contacts>();
   for (const contact of contacts) {
@@ -322,14 +328,22 @@ export async function getJob(jobId: number) {
   ]);
   const job = jobs[0];
   if (!job) return null;
-  const company = job.companies?.name ?? "";
+  const asks = await select<ReferralAsk>(
+    "referral_asks", `select=id,contact_id,asked_at,replied_at,outcome&job_id=eq.${jobId}`,
+  ).catch(() => [] as ReferralAsk[]);   // tolerate the table predating 0011
   return {
     job,
     score: scores[0] ?? null,
     application: apps[0] ?? null,
     referrals: (referrals.get(job.companies?.company_key ?? "") ?? []).slice(0, 5),
+    asks,
   };
 }
+
+export type ReferralAsk = {
+  id: number; contact_id: number; asked_at: string;
+  replied_at: string | null; outcome: "referred" | "declined" | "no_reply" | null;
+};
 
 // --- funnel -------------------------------------------------------------
 
@@ -491,6 +505,29 @@ export async function getFunnel() {
     }),
     ["≤30d", "31–60d", "61–90d", ">90d", "unrecorded"],
   );
+  // Referral funnel (PLAN 5.4): asks -> replies -> referred -> applied via
+  // referral -> interviews among those.
+  const asks = await select<{ outcome: string | null }>("referral_asks", "select=outcome")
+    .catch(() => [] as { outcome: string | null }[]);
+  const viaReferral = applied.filter((a) => a.via_referral);
+  const referral: OutcomeStage[] = [
+    { label: "asked", n: asks.length },
+    { label: "replied", n: asks.filter((a) => a.outcome === "referred" || a.outcome === "declined").length },
+    { label: "referred", n: asks.filter((a) => a.outcome === "referred").length },
+    { label: "applied via referral", n: viaReferral.length },
+    { label: "interview via referral", n: viaReferral.filter((a) => interviewed.includes(a)).length },
+  ];
+  // How much of the network the roster can reach at all: contacts whose
+  // employer is a tracked company. The ceiling on everything above.
+  const [contactKeys, companyKeys] = await Promise.all([
+    select<{ company_norm: string | null }>("connections", "select=company_norm"),
+    select<{ company_key: string | null }>("companies", "select=company_key"),
+  ]);
+  const tracked = new Set(companyKeys.map((c) => c.company_key).filter(Boolean));
+  const reach = {
+    contacts: contactKeys.length,
+    atTracked: contactKeys.filter((c) => c.company_norm && tracked.has(c.company_norm)).length,
+  };
   const appliedBeforePing = applied.filter((a) => a.applied_before_ping).length;
   const neverPinged = applied.filter((a) => a.first_ping_at === null).length;
   const family = bucketise(
@@ -551,6 +588,8 @@ export async function getFunnel() {
     family,
     stages,
     outcomes,
+    referral,
+    reach,
     interviewsPer10,
     notice,
     appliedBeforePing,

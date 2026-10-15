@@ -127,6 +127,26 @@ export default async function FunnelPage() {
         </div>
       </section>
 
+      <section className="panel">
+        <div className="panel-title">Referrals</div>
+        {f.referral.map((s) => (
+          <div className="bar-row" key={s.label}>
+            <div className="bar-label">{s.label}</div>
+            <div className="bar-track">
+              <div className="bar-fill"
+                   style={{ width: `${f.referral[0].n ? (s.n / f.referral[0].n) * 100 : 0}%` }} />
+              <div className="bar-num"><span>{s.n}</span></div>
+            </div>
+          </div>
+        ))}
+        <div className="note">
+          Asks are logged by the Ask button on a job&apos;s referral contacts; mark
+          the reply there too. {f.reach.atTracked} of your {f.reach.contacts}{" "}
+          contacts work at a company on the roster — the ceiling on everything
+          above until the roster includes where your network is.
+        </div>
+      </section>
+
       <Comparison
         title="By channel"
         buckets={f.channel}

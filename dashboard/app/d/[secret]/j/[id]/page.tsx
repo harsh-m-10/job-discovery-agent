@@ -6,6 +6,7 @@ import StatusButtons from "../../StatusButtons";
 import Copyable from "./Copyable";
 import { screening as loadScreening, type Screening } from "@/lib/screening";
 import ApplyDetails, { type Details } from "./ApplyDetails";
+import ReferralList from "./ReferralList";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function JobPage({
 
   const data = await getJob(jobId);
   if (!data) notFound();
-  const { job, score, application, referrals } = data;
+  const { job, score, application, referrals, asks } = data;
 
   const screening = loadScreening();
   const ageHours = hoursSince(effectivePostedAt(job));
@@ -174,15 +175,15 @@ export default async function JobPage({
                 connections export to populate this.
               </div>
             ) : (
-              <div className="referral" style={{ marginTop: 0 }}>
-                {referrals.map((c: any) => (
-                  <span className="referral-name" key={c.id}>
-                    {c.full_name}
-                    {c.title && <span className="role"> · {c.title}</span>}
-                    {c.is_batchmate && <span className="batch-pill">batchmate</span>}
-                  </span>
-                ))}
-              </div>
+              <ReferralList
+                contacts={referrals}
+                asks={asks}
+                secret={secret}
+                jobId={job.id}
+                role={job.title}
+                company={company}
+                url={job.absolute_url}
+              />
             )}
           </section>
 

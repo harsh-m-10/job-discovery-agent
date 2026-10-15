@@ -65,6 +65,17 @@ export async function POST(request: Request) {
     notes: body?.notes === undefined ? (prior?.notes ?? null) : String(body.notes),
   };
 
+  // Applied via referral: link the application to whoever was asked about this
+  // job most recently (PLAN 5.4), unless a contact is already recorded. That is
+  // what lets the funnel split outcomes by who referred, not just whether.
+  if (row.via_referral && !(prior as any)?.referral_contact_id) {
+    const asks = await select<{ contact_id: number }>(
+      "referral_asks",
+      `select=contact_id&job_id=eq.${jobId}&order=asked_at.desc&limit=1`,
+    ).catch(() => []);
+    if (asks[0]) row.referral_contact_id = asks[0].contact_id;
+  }
+
   if (status === "applied" && !prior?.applied_at) {
     row.applied_at = now;
     row.hours_since_posted = Number(hoursSince(effectivePostedAt(job)).toFixed(2));
