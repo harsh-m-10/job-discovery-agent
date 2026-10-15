@@ -378,33 +378,62 @@ function latencyBucket(hours: number | null, dateOnly: boolean): string {
   return lo === latencyOf(hours) ? lo : "day-precision";
 }
 
+/** One row of the v_funnel view (db/migrations/0008). */
+type FunnelRow = {
+  application_id: number;
+  job_id: number;
+  status: string;
+  applied_at: string | null;
+  responded_at: string | null;
+  via_referral: boolean | null;
+  hours_since_posted: number | null;
+  posted_at_precision: "timestamp" | "date" | null;
+  role_family: string | null;
+  min_years: number | null;
+  first_ping_at: string | null;
+  discover_hours: number | null;
+  ping_lag_hours: number | null;
+  ping_to_apply_hours: number | null;
+  applied_before_ping: boolean | null;
+};
+
+export type Stage = { label: string; owner: "machine" | "you"; median: number | null; n: number };
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function stat(values: number[]): { median: number | null; n: number } {
+  return { median: median(values), n: values.length };
+}
+
 export async function getFunnel() {
-  const [apps, scores, jobs] = await Promise.all([
-    select<Application>("applications", "select=*"),
+  // Per-application rows come from v_funnel, which owns the joins and the
+  // latency stages (docs/PLAN.md 3.4/4.5). Scores are still read directly for
+  // the calibration and skill-gap panels, which are about scoring, not
+  // applications.
+  const [apps, scores, open] = await Promise.all([
+    select<FunnelRow>("v_funnel", "select=*"),
     select<ScoreRow & { scored_at: string }>(
       "job_scores",
       "select=job_id,fit_score,min_years,gap_skills,scored_at",
     ),
-    select<{ id: number; posted_at: string | null; first_seen_at: string;
-             posted_at_precision: "timestamp" | "date" | null }>(
-      "jobs",
-      "select=id,posted_at,first_seen_at,posted_at_precision",
-    ),
+    // Was every job ever seen, so "OPEN TRACKED" showed ~4,400 instead of the
+    // ~2,300 actually open.
+    select<{ id: number }>("jobs", "select=id&closed_at=is.null"),
   ]);
 
-  const scoreByJob = new Map(scores.map((s) => [s.job_id, s]));
-  const dateOnlyJobs = new Set(
-    jobs.filter((j) => j.posted_at_precision === "date").map((j) => j.id),
-  );
   const applied = apps.filter((a) => a.applied_at !== null);
   const responded = applied.filter(
     (a) => a.responded_at !== null || RESPONDED.has(a.status),
   );
 
   const rows = applied.map((a) => {
-    const score = scoreByJob.get(a.job_id);
-    const minYears = score?.min_years ?? null;
-    const hours = a.hours_since_posted;
+    const minYears = a.min_years === null ? null : Number(a.min_years);
+    const hours = a.hours_since_posted === null ? null : Number(a.hours_since_posted);
     return {
       applied: true,
       responded: a.responded_at !== null || RESPONDED.has(a.status),
@@ -412,9 +441,28 @@ export async function getFunnel() {
       expKey:
         minYears === null ? "unstated" :
         minYears < 2 ? "0-2y" : minYears < 4 ? "2-4y" : "4y+",
-      latencyKey: latencyBucket(hours, dateOnlyJobs.has(a.job_id)),
+      latencyKey: latencyBucket(hours, a.posted_at_precision === "date"),
+      familyKey: a.role_family ?? "unclassified",
     };
   });
+
+  // Where the time between posting and applying goes. The split matters
+  // because the two halves have different owners: discovery and pinging are
+  // the pipeline's, ping -> apply is the operator's.
+  const nums = (pick: (a: FunnelRow) => number | null) =>
+    applied.map(pick).filter((v): v is number => v !== null).map(Number);
+  const stages: Stage[] = [
+    { label: "posting → discovered", owner: "machine", ...stat(nums((a) => a.discover_hours)) },
+    { label: "discovered → pinged", owner: "machine", ...stat(nums((a) => a.ping_lag_hours)) },
+    { label: "pinged → applied", owner: "you", ...stat(nums((a) => a.ping_to_apply_hours)) },
+  ];
+  const appliedBeforePing = applied.filter((a) => a.applied_before_ping).length;
+  const neverPinged = applied.filter((a) => a.first_ping_at === null).length;
+  const family = bucketise(
+    rows.map((r) => ({ ...r, key: r.familyKey })),
+    ["genai", "ml", "data", "backend", "platform", "fullstack", "security", "other",
+     "unclassified"],
+  );
 
   const channel = bucketise(
     rows.map((r) => ({ ...r, key: r.referral ? "referral" : "cold" })),
@@ -460,11 +508,15 @@ export async function getFunnel() {
       responded: responded.length,
       queued: apps.filter((a) => a.status === "queued").length,
       skipped: apps.filter((a) => a.status === "skipped").length,
-      openJobs: jobs.length,
+      openJobs: open.length,
     },
     channel,
     experience,
     latency,
+    family,
+    stages,
+    appliedBeforePing,
+    neverPinged,
     calibration: {
       scored: scoredThisWeek.length,
       high: highThisWeek,

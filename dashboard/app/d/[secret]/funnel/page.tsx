@@ -119,6 +119,37 @@ export default async function FunnelPage() {
       />
 
       <section className="panel">
+        <div className="panel-title">Where the time goes</div>
+        <div className="stat-row">
+          {f.stages.map((s) => (
+            <div className="stat" key={s.label} data-hero={s.owner === "you" ? "true" : undefined}>
+              <div className="stat-k">{s.label.toUpperCase()}</div>
+              <div className="stat-v">{s.median === null ? "—" : `${s.median.toFixed(1)}h`}</div>
+              <div className="stat-k" style={{ opacity: 0.7 }}>
+                {s.owner === "you" ? "you" : "pipeline"} · median of {s.n}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="note">
+          Posting to application, split by who owns each part. Discovery only
+          counts postings with an exact time (Workday gives a date). Target for
+          pinged → applied is 3h.
+          {f.appliedBeforePing > 0 && (
+            <> {f.appliedBeforePing} application(s) came <b>before</b> the
+            pipeline pinged at all — found faster by hand than by the system.</>
+          )}
+          {f.neverPinged > 0 && <> {f.neverPinged} were never pinged.</>}
+        </div>
+      </section>
+
+      <Comparison
+        title="By role family"
+        buckets={f.family}
+        hint="Classified from the title (common/role.py). The resume variant follows the family."
+      />
+
+      <section className="panel">
         <div className="panel-title">Score calibration this week</div>
         <div className="stat-row">
           <div className="stat" data-hero={cal.pct > 25 && cal.scored >= 10}>
