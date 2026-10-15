@@ -52,7 +52,10 @@ VERIFIED = ROOT / "seeds" / "companies.verified.yaml"
 DEFAULT_CADENCE = {1: 0, 2: 55, 3: 23 * 60}
 
 
-TRIGGER_SOURCES = ("cronjob", "cf-standby", "schedule", "manual")
+# cronjob: cron-job.org, primary, :00/:15/:30/:45. cf: the Cloudflare Worker,
+# :07/:22/:37/:52, unconditional. apps-script: the Gmail-side standby, only
+# when the newest run is >25 min old. schedule: GitHub's own, tertiary.
+TRIGGER_SOURCES = ("cronjob", "cf", "apps-script", "schedule", "manual")
 
 
 def lease_blocks(last_start: datetime | None, lease_minutes: float,
@@ -188,6 +191,7 @@ def main() -> int:
         lease = float(settings.get("run_lease_minutes", 8))
         if lease_blocks(last, lease):
             age = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            store.log_trigger(args.source, "lease")
             print(f"skipped: lease — an automated run started {age:.1f} min ago "
                   f"(lease {lease:g} min). Nothing polled, nothing recorded.")
             return 0
@@ -197,6 +201,8 @@ def main() -> int:
            if is_due(c, args.all or args.only is not None, cadence)]
     started = time.monotonic()
     run_id = store.start_run("ingest") if store else None
+    if store and args.source != "manual" and not args.only:
+        store.log_trigger(args.source, "ran", run_id)
     print(f"{len(due)} of {len(companies)} boards due"
           f"{' (dry run)' if args.dry_run else ''}\n")
 

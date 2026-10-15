@@ -287,7 +287,7 @@ def test_the_run_lease():
     assert not lease_blocks(None, 8, now), "no prior run must never block"
     assert not lease_blocks(now - timedelta(minutes=1), 0, now), "lease 0 disables it"
     # The values the dispatchers and the workflow actually send.
-    assert set(TRIGGER_SOURCES) == {"cronjob", "cf-standby", "schedule", "manual"}
+    assert set(TRIGGER_SOURCES) == {"cronjob", "cf", "apps-script", "schedule", "manual"}
 
 
 def test_a_fetch_with_duplicate_ids_is_refused_not_diffed():

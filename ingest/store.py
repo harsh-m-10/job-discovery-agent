@@ -222,6 +222,17 @@ class Store:
         except (KeyError, ValueError, AttributeError):
             return None
 
+    def log_trigger(self, source: str, outcome: str,
+                    run_id: int | None = None) -> None:
+        """One trigger_log row per fire (db/migrations/0016). Never raises:
+        bookkeeping about a trigger must not be what stops the run it fired."""
+        try:
+            self._request("POST", "trigger_log", prefer="return=minimal",
+                          body={"source": source, "outcome": outcome,
+                                "run_id": run_id})
+        except Exception as exc:
+            print(f"  trigger_log: not recorded ({str(exc)[:120]})")
+
     def start_run(self, worker: str) -> int | None:
         resp = self._request("POST", "run_log", body={"worker": worker},
                              prefer="return=representation")

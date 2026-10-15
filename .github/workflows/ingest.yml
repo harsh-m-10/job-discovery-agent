@@ -1,15 +1,22 @@
 name: ingest
+# Shown in the Actions list, so which trigger fired each run is visible there.
+run-name: ingest (${{ inputs.source || 'schedule' }})
 
 on:
-  # PRIMARY trigger (Phase 2): an external pinger POSTs a workflow_dispatch
-  # every 15 minutes with inputs.source = "cronjob", and a Cloudflare Worker
-  # dispatches "cf-standby" only when the last run is stale (infra/cf-standby).
-  # Dispatch starts in seconds -- measured 11s -- where `schedule` below was
-  # measured at a 302-minute median interval against its declared 15.
+  # Four triggers, on purpose (decided 2026-10-15). The concurrency group below
+  # plus the 8-minute run lease in ingest/run.py collapse the duplicates, and
+  # every fire -- collapsed or not -- lands in trigger_log (migration 0016).
+  #   cronjob      cron-job.org, primary, every 15 min at :00/:15/:30/:45
+  #   cf           Cloudflare Worker, every 15 min at :07/:22/:37/:52,
+  #                unconditional (infra/cf-standby)
+  #   apps-script  Apps Script standby, only when the newest run is >25 min old
+  #   schedule     GitHub's own scheduler, below; tertiary
+  # Dispatch starts in seconds -- measured 11s -- where `schedule` was measured
+  # at a 302-minute median interval against its declared 15.
   workflow_dispatch:
     inputs:
       source:
-        description: "Which trigger fired this run (cronjob | cf-standby | manual)"
+        description: "Which trigger fired this run (cronjob | cf | apps-script | manual)"
         required: false
         default: "manual"
 
@@ -137,7 +144,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          # Read only for its expiry header; see notify/token_watch.py.
+          # Checked for 401s and expiry; see notify/token_watch.py.
           GH_DISPATCH_PAT: ${{ secrets.GH_DISPATCH_PAT }}
         run: python -m notify.watchdog
 

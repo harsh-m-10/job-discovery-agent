@@ -1,16 +1,17 @@
-# Cloudflare Worker: standby dispatcher for .github/workflows/ingest.yml.
+# Cloudflare Worker: second dispatcher (offset, unconditional) for .github/workflows/ingest.yml.
 # See src/index.js for what it does and README.md for deploying it.
 name = "job-agent-cf-standby"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# No route and no custom domain: the Worker only runs on its cron. Its default
-# workers.dev URL answers 404 to everything.
-workers_dev = true
+# No route, no custom domain and no workers.dev URL: the Worker only runs on
+# its cron, so it has no public surface at all.
+workers_dev = false
 
 [triggers]
-# Free plan: 5 cron triggers per account. This uses one.
-crons = ["*/15 * * * *"]
+# Offset 7 minutes from cron-job.org (:00/:15/:30/:45). Free plan: 5 cron
+# triggers per account; this uses one.
+crons = ["7,22,37,52 * * * *"]
 
 [observability]
 enabled = true
