@@ -69,6 +69,9 @@ jobs:
       - name: Digest rendering tests
         run: python tests/test_digest.py
 
+      - name: Dispatch token expiry tests
+        run: python tests/test_token_watch.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

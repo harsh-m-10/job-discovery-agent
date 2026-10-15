@@ -122,6 +122,8 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          # Read only for its expiry header; see notify/token_watch.py.
+          GH_DISPATCH_PAT: ${{ secrets.GH_DISPATCH_PAT }}
         run: python -m notify.watchdog
 
       # --- external dead-man's switch ---------------------------------------

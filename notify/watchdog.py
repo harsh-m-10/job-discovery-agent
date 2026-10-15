@@ -143,6 +143,19 @@ def main() -> int:
         if not resp.json():
             findings.append("no new postings in 72h")
 
+    # Dispatch token (Phase 2.6). Both external triggers share it, so its
+    # expiry is a single point of failure for the whole trigger plane.
+    from notify import token_watch
+    token = token_watch.check()
+    print(f"dispatch token: {token.state} — {token.detail}")
+    if token.state in ("expiring", "invalid"):
+        findings.append(token.detail)
+        if not args.dry_run:
+            send_alert("token_expiry",
+                       ("dispatch token REJECTED" if token.state == "invalid"
+                        else f"dispatch token expires in {token.days_left:.0f} days"),
+                       token_watch.alert_body(token))
+
     print()
     if findings:
         print("FINDINGS:")
