@@ -3,6 +3,7 @@
 
     python scripts/trigger_report.py            # last 48 hours
     python scripts/trigger_report.py --hours 168
+    python scripts/trigger_report.py --hours 6 --list   # every run, its trigger and gap
 
 docs/PLAN.md Phase 2 sets three numbers to hit after 48 hours live:
   * median interval between automated runs <= 17 min, p90 <= 30 min
@@ -52,6 +53,19 @@ def fetch(hours: float) -> list[dict]:
     return resp.json()
 
 
+def fetch_fires(hours: float) -> list[dict]:
+    """trigger_log (migration 0016): every fire, including those the lease
+    collapsed. Empty if the table predates this deployment."""
+    url = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1"
+    key = os.environ["SUPABASE_SERVICE_KEY"]
+    since = quote((datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat())
+    resp = requests.get(
+        f"{url}/trigger_log?select=fired_at,source,outcome&fired_at=gte.{since}"
+        f"&order=fired_at.asc",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"}, timeout=60)
+    return resp.json() if resp.ok else []
+
+
 def percentile(values: list[float], pct: float) -> float:
     ordered = sorted(values)
     index = min(len(ordered) - 1, max(0, round(pct * (len(ordered) - 1))))
@@ -71,6 +85,8 @@ def overlaps(rows: list[dict]) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=float, default=48)
+    ap.add_argument("--list", action="store_true",
+                    help="print every run with its trigger and the gap before it")
     args = ap.parse_args()
 
     rows = fetch(args.hours)
@@ -82,6 +98,26 @@ def main() -> int:
     print("by trigger:")
     for source, n in sources.most_common():
         print(f"  {source:<12} {n:>4}")
+
+    fires = fetch_fires(args.hours)
+    if fires:
+        print("\nevery trigger fire (trigger_log), ran / collapsed by the lease:")
+        mix: dict[str, Counter] = {}
+        for f in fires:
+            mix.setdefault(f["source"], Counter())[f["outcome"]] += 1
+        for source, c in sorted(mix.items()):
+            print(f"  {source:<12} {c['ran']:>4} ran  {c['lease']:>4} collapsed")
+
+    if args.list:
+        print("\nstarted (IST)        trigger       gap")
+        ist = timezone(timedelta(hours=5, minutes=30))
+        prev = None
+        for r in rows:
+            t = parse(r["started_at"])
+            gap = f"{(t - prev).total_seconds() / 60:5.1f} min" if prev else "      --"
+            print(f"  {t.astimezone(ist):%d %b %H:%M:%S}  {r.get('trigger_source') or '?':<12}  {gap}")
+            if r.get("trigger_source") not in (None, "manual"):
+                prev = t
 
     if len(automated) < 2:
         print("\nfewer than two automated runs — no interval to measure yet")
