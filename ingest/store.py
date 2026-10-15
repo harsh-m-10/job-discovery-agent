@@ -16,6 +16,7 @@ from typing import Any, Iterable
 import requests
 
 from common.company_key import company_key
+from common.paging import stable_order
 
 LAYER1_TABLES = {"companies", "jobs", "run_log"}
 PAGE = 1000
@@ -86,7 +87,9 @@ class Store:
         return resp
 
     def _select_all(self, table: str, params: str) -> list[dict]:
-        """Paged GET. Supabase caps a single response at 1000 rows."""
+        """Paged GET. Supabase caps a single response at 1000 rows, and pages
+        are only consistent under a unique order (common/paging.py)."""
+        params = stable_order(table, params)
         rows: list[dict] = []
         offset = 0
         while True:

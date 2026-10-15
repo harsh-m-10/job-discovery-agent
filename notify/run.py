@@ -111,6 +111,9 @@ def get_all(path_and_query: str, headers: dict) -> list[dict]:
     Raises on an HTTP error. Before, an error body was a JSON object that the
     callers then iterated as if it were rows.
     """
+    from common.paging import stable_order
+    table, _, query = path_and_query.partition("?")
+    path_and_query = f"{table}?{stable_order(table, query)}"
     rows: list[dict] = []
     for page in range(MAX_PAGES):
         offset = page * PAGE

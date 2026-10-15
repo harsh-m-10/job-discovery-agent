@@ -87,6 +87,9 @@ jobs:
       - name: SuccessFactors adapter tests
         run: python tests/test_successfactors.py
 
+      - name: Stable paging tests
+        run: python tests/test_paging.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

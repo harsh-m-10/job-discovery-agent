@@ -42,7 +42,33 @@ const MAX_PAGES = 50;
  * 9.0s and three 8.5s. Every count in `getQueueMeta` was wrong the same way,
  * and `referralIndex` lost 118 of 1,118 contacts.
  */
+/**
+ * Unique key per table, appended to every paged query's ORDER BY. Mirrors
+ * common/paging.py. LIMIT/OFFSET pages are only consistent under a unique
+ * order; without one Postgres may return rows in a different order per page,
+ * so pages overlap and other rows vanish. Bit the pipeline on 2026-10-15 once
+ * reads exceeded one page; with 4,000+ open jobs every dashboard read of jobs
+ * or job_scores is several pages.
+ */
+const PRIMARY_KEY: Record<string, string> = {
+  jobs: "id", companies: "id", job_scores: "job_id", connections: "id",
+  applications: "id", notifications: "id", run_log: "id",
+  application_events: "id", referral_asks: "id", v_funnel: "application_id",
+};
+
+export function stableOrder(table: string, query: string): string {
+  const pk = PRIMARY_KEY[table];
+  if (!pk) return query;
+  const parts = query ? query.split("&") : [];
+  const i = parts.findIndex((p) => p.startsWith("order="));
+  if (i === -1) return [...parts, `order=${pk}.asc`].join("&");
+  const cols = parts[i].slice("order=".length).split(",").map((c) => c.split(".")[0]);
+  if (!cols.includes(pk)) parts[i] = `${parts[i]},${pk}.asc`;
+  return parts.join("&");
+}
+
 export async function select<T = any>(table: string, query: string): Promise<T[]> {
+  query = stableOrder(table, query);
   const rows: T[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE;

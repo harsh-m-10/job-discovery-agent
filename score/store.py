@@ -30,6 +30,12 @@ class ScoreStore:
         })
 
     def _get(self, table: str, params: str) -> list[dict]:
+        # A unique order is what keeps Range pages from overlapping: on
+        # 2026-10-15 open_jobs' order=posted_at.desc (not unique) returned
+        # duplicates across pages once >1,000 jobs were unscored, and the
+        # job_scores upsert failed the whole pipeline run.
+        from common.paging import stable_order
+        params = stable_order(table, params)
         rows: list[dict] = []
         offset = 0
         while True:

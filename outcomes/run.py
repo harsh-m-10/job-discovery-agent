@@ -100,6 +100,9 @@ class Db:
                         "Content-Type": "application/json"}
 
     def get_all(self, path: str) -> list[dict]:
+        from common.paging import stable_order
+        table, _, query = path.partition("?")
+        path = f"{table}?{stable_order(table, query)}"
         rows: list[dict] = []
         for page in range(50):
             off = page * PAGE
