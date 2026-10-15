@@ -353,3 +353,13 @@ notification_failure_retention_days: 30
 max_consecutive_failures: 5
 fetch_timeout_seconds: 20
 fetch_concurrency: 8
+
+# Warmth for referral ranking (PLAN 5.3; decided 2026-10-15). The LinkedIn
+# export carries no education, so a connection's year is the only signal:
+# connected during the RNSIT batch years -> batchmate, within one year either
+# side -> near-batch. Applied at import and by scripts/flag_batchmates.py.
+# Measured at decision time: 937 of 1,118 connections fall inside 2021-2025, so
+# the flag ranks warm over cold rather than picking out a few people.
+referral_warmth:
+  batch_years: [2021, 2025]
+  near_batch_years: [2020, 2026]

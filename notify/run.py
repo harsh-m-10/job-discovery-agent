@@ -190,7 +190,7 @@ def load_contacts(headers: dict) -> list:
     from score.referral import Contact
     rows = get_all(
         "connections?select=id,full_name,company_raw,company_norm,title,connected_on,"
-        "is_batchmate,profile_url&company_norm=not.is.null", headers)
+        "is_batchmate,near_batch,profile_url&company_norm=not.is.null", headers)
     out = []
     for r in rows:
         try:
@@ -200,7 +200,8 @@ def load_contacts(headers: dict) -> list:
         out.append(Contact(id=r["id"], full_name=r["full_name"], company_raw=r.get("company_raw"),
                            company_norm=r.get("company_norm") or "", title=r.get("title"),
                            connected_on=on, is_batchmate=bool(r.get("is_batchmate")),
-                           profile_url=r.get("profile_url")))
+                           profile_url=r.get("profile_url"),
+                           near_batch=bool(r.get("near_batch"))))
     return out
 
 

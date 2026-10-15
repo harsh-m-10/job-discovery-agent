@@ -80,7 +80,7 @@ async function referralIndex() {
     // Batchmates first, then most recent connection: the presentation half of
     // score/referral.py:rank_matches, which also weighs title fit.
     "select=id,full_name,company_norm,title,is_batchmate,profile_url" +
-      "&order=is_batchmate.desc.nullslast,connected_on.desc.nullslast",
+      "&order=is_batchmate.desc.nullslast,near_batch.desc,connected_on.desc.nullslast",
   );
 
   const byCompany = new Map<string, typeof contacts>();

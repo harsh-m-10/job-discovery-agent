@@ -138,8 +138,17 @@ def to_record(row: dict) -> dict:
         "title": (row.get("Position") or "").strip() or None,
         "connected_on": connected.isoformat() if connected else None,
         "profile_url": (row.get("URL") or "").strip() or None,
-        "is_batchmate": False,          # set by hand in the dashboard; see spec §7.3
+        **_warmth(connected),
     }
+
+
+def _warmth(connected) -> dict:
+    """is_batchmate / near_batch from the year window in settings (PLAN 5.3)."""
+    from common.settings import load_settings
+    from score.referral import warmth, warmth_windows
+    batch, near = warmth(connected, *warmth_windows(
+        load_settings(ROOT / "config" / "settings.yaml")))
+    return {"is_batchmate": batch, "near_batch": near}
 
 
 def upload(records: list[dict]) -> None:

@@ -39,6 +39,7 @@ class Contact:
     connected_on: date | None
     is_batchmate: bool = False
     profile_url: str | None = None
+    near_batch: bool = False
 
 
 @dataclass
@@ -105,17 +106,40 @@ def match_company(company: str, contacts: list[Contact]) -> list[Match]:
 
 def rank_matches(matches: list[Match], target_role: str | None = None,
                  limit: int = 3) -> list[Match]:
-    """Batchmate first, then role affinity, then recency of connection.
+    """Batchmate first, then near-batch, then role affinity, then recency.
 
     Batchmates outrank everyone because a peer from the same graduating cohort
     replies far more often than a senior stranger at the same company.
     """
     def key(m: Match):
         return (
-            0 if m.contact.is_batchmate else 1,
+            0 if m.contact.is_batchmate else 1 if m.contact.near_batch else 2,
             -_title_affinity(m.contact.title, target_role),
             -(m.contact.connected_on.toordinal() if m.contact.connected_on else 0),
             -m.confidence,
         )
 
     return sorted(matches, key=key)[:limit]
+
+
+def warmth(connected_on: date | None, batch_years: tuple[int, int],
+           near_years: tuple[int, int]) -> tuple[bool, bool]:
+    """-> (is_batchmate, near_batch) from the connection year (PLAN 5.3).
+
+    The export has no education column, so the year a connection was made is
+    the only cohort signal there is. Inclusive ranges; near excludes batch.
+    """
+    if connected_on is None:
+        return False, False
+    y = connected_on.year
+    batch = batch_years[0] <= y <= batch_years[1]
+    near = not batch and near_years[0] <= y <= near_years[1]
+    return batch, near
+
+
+def warmth_windows(settings: dict) -> tuple[tuple[int, int], tuple[int, int]]:
+    """The two windows from config/settings.yaml:referral_warmth."""
+    raw = settings.get("referral_warmth") or {}
+    b = raw.get("batch_years") or [0, -1]
+    n = raw.get("near_batch_years") or b
+    return (int(b[0]), int(b[1])), (int(n[0]), int(n[1]))

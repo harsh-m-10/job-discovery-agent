@@ -205,6 +205,29 @@ def test_path_outside_the_repo_is_allowed():
     assert resolve_csv_path(str(outside)) == outside.resolve()
 
 
+def test_warmth_windows_from_the_connection_year():
+    from score.referral import warmth, warmth_windows
+    batch, near = warmth_windows({"referral_warmth": {
+        "batch_years": [2021, 2025], "near_batch_years": [2020, 2026]}})
+    assert warmth(date(2023, 6, 1), batch, near) == (True, False)
+    assert warmth(date(2021, 1, 1), batch, near) == (True, False), "inclusive"
+    assert warmth(date(2026, 3, 1), batch, near) == (False, True)
+    assert warmth(date(2020, 12, 31), batch, near) == (False, True)
+    assert warmth(date(2019, 5, 1), batch, near) == (False, False)
+    assert warmth(None, batch, near) == (False, False)
+    # No setting at all flags nobody.
+    assert warmth(date(2023, 1, 1), *warmth_windows({})) == (False, False)
+
+
+def test_near_batch_ranks_between_batchmates_and_everyone_else():
+    cold = contact(1, "Stripe", when=date(2026, 9, 1))
+    near = contact(2, "Stripe", when=date(2019, 1, 1))
+    near.near_batch = True
+    warm = contact(3, "Stripe", batch=True, when=date(2018, 1, 1))
+    ranked = rank_matches(match_company("Stripe", [cold, near, warm]))
+    assert [m.contact.id for m in ranked] == [3, 2, 1]
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
