@@ -21,6 +21,7 @@ export type CardJob = {
   ageHours: number;
   ageLabel: string;
   datedFromSighting: boolean;
+  datedToDay: boolean;
   referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean }[];
 };
 
@@ -133,6 +134,11 @@ export default function JobCard({
             {job.datedFromSighting && (
               <span className="dot" title="The ATS gave no posting date; age is measured from first sighting">
                 approx
+              </span>
+            )}
+            {job.datedToDay && (
+              <span className="dot" title="The ATS gave only a posting date, not a time, so age is shown in whole days">
+                date only
               </span>
             )}
           </div>

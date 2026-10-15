@@ -1,5 +1,5 @@
 import { getQueue, getQueueMeta, getStatus } from "@/lib/queries";
-import { effectivePostedAt, formatAge, hoursSince } from "@/lib/db";
+import { effectivePostedAt, formatAge, formatDayAge, hoursSince } from "@/lib/db";
 import QueueList from "./QueueList";
 import type { CardJob } from "./JobCard";
 import StatusStrip from "./StatusStrip";
@@ -34,8 +34,10 @@ export default async function QueuePage({
       gap_skills: row.gap_skills,
       reasoning: row.reasoning,
       ageHours,
-      ageLabel: formatAge(ageHours),
+      ageLabel: row.posted_at_precision === "date"
+        ? formatDayAge(ageHours) : formatAge(ageHours),
       datedFromSighting: !row.posted_at,
+      datedToDay: row.posted_at_precision === "date",
       referrals: row.referrals,
     };
   });

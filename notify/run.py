@@ -138,7 +138,12 @@ def prune_failures(retention_days: float) -> int | None:
     return deleted
 
 
-def age_label(hours: float) -> str:
+def age_label(hours: float, date_only: bool = False) -> str:
+    """Human age. For a date-only posted_at (Workday) the hours are a
+    midnight-UTC placeholder, so only whole days are honest."""
+    if date_only:
+        days = int(hours // 24)
+        return "today" if days == 0 else f"{days}d"
     if hours < 1:
         return f"{max(1, int(hours * 60))}m"
     if hours < 48:
@@ -178,7 +183,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     ids = ",".join(str(s["job_id"]) for s in wanted)
     jobs = get_all(
         f"jobs?select=id,title,location,absolute_url,compensation,"
-        f"posted_at,first_seen_at,companies(name)&closed_at=is.null&id=in.({ids})",
+        f"posted_at,posted_at_precision,first_seen_at,companies(name)"
+        f"&closed_at=is.null&id=in.({ids})",
         headers)
     job_by_id = {j["id"]: j for j in jobs}
 
@@ -200,7 +206,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
             "location": job.get("location"),
             "absolute_url": job["absolute_url"],
             "compensation": job.get("compensation"),
-            "age_label": age_label(hours),
+            "age_label": age_label(
+                hours, date_only=job.get("posted_at_precision") == "date"),
             "age_hours": hours,
             "fit_score": score.get("fit_score"),
             "min_years": score.get("min_years"),

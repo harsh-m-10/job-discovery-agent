@@ -86,6 +86,19 @@ def parse_epoch_ms(value) -> datetime | None:
         return None
 
 
+_DATE_ONLY = re.compile(r"^\s*\d{4}-\d{2}-\d{2}\s*$")
+
+
+def is_date_only(value) -> bool:
+    """True for an ISO calendar date with no time part ("2026-10-15").
+
+    parse_iso accepts those and returns midnight UTC, which is a correct
+    *type* but invents a time of day. Callers use this to record that the
+    time is a placeholder (jobs.posted_at_precision = 'date').
+    """
+    return isinstance(value, str) and bool(_DATE_ONLY.match(value))
+
+
 def parse_iso(value) -> datetime | None:
     if not value or not isinstance(value, str):
         return None

@@ -29,7 +29,7 @@ from ..http import session
 from ..models import BoardFetchError, RawJob
 from common.geo import names_india
 
-from ..normalize import clean_text, html_to_text, parse_iso
+from ..normalize import clean_text, html_to_text, is_date_only, parse_iso
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
@@ -213,8 +213,17 @@ class WorkdayAdapter:
 
             detail = self._detail(base, external_path)
             description = html_to_text(detail.get("jobDescription"))
-            posted_at = parse_iso(detail.get("startDate")) or parse_iso(
-                detail.get("postedOn"))
+            # startDate is a bare calendar day on every tenant measured
+            # (1,470 of 1,470 rows at midnight UTC), so record it as such:
+            # without the flag, every age and apply-latency computed from it
+            # carries up to 24h of invented precision.
+            raw_posted = detail.get("startDate")
+            posted_at = parse_iso(raw_posted)
+            if posted_at is None:          # same fallback order as before
+                raw_posted = detail.get("postedOn")
+                posted_at = parse_iso(raw_posted)
+            precision = (("date" if is_date_only(raw_posted) else "timestamp")
+                         if posted_at else None)
 
             job_id = (detail.get("jobReqId") or posting.get("bulletFields", [None])[0]
                       or external_path.rsplit("/", 1)[-1])
@@ -226,6 +235,7 @@ class WorkdayAdapter:
                 description=description,
                 absolute_url=detail.get("externalUrl") or f"{public_base}{external_path}",
                 posted_at=posted_at,
+                posted_at_precision=precision,
                 raw={
                     "externalPath": external_path,
                     "postedOn": posting.get("postedOn"),

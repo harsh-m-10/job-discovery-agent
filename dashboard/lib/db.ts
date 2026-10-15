@@ -98,6 +98,7 @@ export type QueueRow = {
   compensation: string | null;
   headcount_band: string | null;
   posted_at: string | null;
+  posted_at_precision: "timestamp" | "date" | null;
   first_seen_at: string;
   fit_score: number | null;
   verdict: string;
@@ -117,6 +118,13 @@ export function effectivePostedAt(row: { posted_at: string | null; first_seen_at
 
 export function hoursSince(date: Date): number {
   return (Date.now() - date.getTime()) / 3_600_000;
+}
+
+/** Age for a posted_at that is only a calendar day (Workday). The stored
+ *  time is a midnight-UTC placeholder, so hours would be invented precision. */
+export function formatDayAge(hours: number): string {
+  const days = Math.floor(hours / 24);
+  return days <= 0 ? "today" : `${days}d`;
 }
 
 export function formatAge(hours: number): string {

@@ -20,6 +20,11 @@ class RawJob:
     description: str          # plain text, HTML already stripped
     absolute_url: str
     posted_at: datetime | None = None
+    # "timestamp" | "date" | None. "date" means the ATS gave only a calendar
+    # day and posted_at's time of day is a midnight-UTC placeholder, not data.
+    # None lets the writer infer "timestamp" whenever posted_at is set, so only
+    # an adapter that knows it is lossy has to say anything.
+    posted_at_precision: str | None = None
     compensation: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 

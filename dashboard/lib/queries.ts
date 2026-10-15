@@ -43,6 +43,7 @@ type JobRow = {
   absolute_url: string;
   compensation: string | null;
   posted_at: string | null;
+  posted_at_precision: "timestamp" | "date" | null;
   first_seen_at: string;
   description?: string;
   companies: { name: string; category: string | null; headcount_band: string | null } | null;
@@ -104,7 +105,8 @@ export async function getQueue(): Promise<QueueRow[]> {
   const [jobs, scores, apps, referrals] = await Promise.all([
     select<JobRow>(
       "jobs",
-      "select=id,title,location,absolute_url,compensation,posted_at,first_seen_at," +
+      "select=id,title,location,absolute_url,compensation,posted_at," +
+        "posted_at_precision,first_seen_at," +
         "companies(name,category,headcount_band)&closed_at=is.null",
     ),
     select<ScoreRow>(
@@ -138,6 +140,7 @@ export async function getQueue(): Promise<QueueRow[]> {
       compensation: job.compensation,
       headcount_band: job.companies?.headcount_band ?? null,
       posted_at: job.posted_at,
+      posted_at_precision: job.posted_at_precision,
       first_seen_at: job.first_seen_at,
       fit_score: score.fit_score,
       verdict: score.verdict,
@@ -352,6 +355,29 @@ function bucketise(
   });
 }
 
+function latencyOf(hours: number): string {
+  return hours < 6 ? "<6h" : hours <= 48 ? "6-48h" : ">48h";
+}
+
+/**
+ * Apply-latency bucket for the funnel (docs/PLAN.md 1.4, gap G8).
+ *
+ * `hours_since_posted` is frozen at apply time from posted_at. For a Workday
+ * job posted_at is a calendar day stored as midnight UTC, so the real posting
+ * happened somewhere in the 24 hours after it, and the true latency lies in
+ * (hours - 24, hours]. Throwing those rows away would drop every Workday
+ * application; trusting the raw number would misfile, say, a 3-hour apply as
+ * 27. Instead: if the whole interval lands in one bucket the bucket is certain
+ * and is used; only an interval straddling a boundary goes to
+ * "day-precision", reported on its own rather than guessed.
+ */
+function latencyBucket(hours: number | null, dateOnly: boolean): string {
+  if (hours === null) return "unknown";
+  if (!dateOnly) return latencyOf(hours);
+  const lo = latencyOf(Math.max(0, hours - 24) + 1e-9);   // lower end is open
+  return lo === latencyOf(hours) ? lo : "day-precision";
+}
+
 export async function getFunnel() {
   const [apps, scores, jobs] = await Promise.all([
     select<Application>("applications", "select=*"),
@@ -359,13 +385,17 @@ export async function getFunnel() {
       "job_scores",
       "select=job_id,fit_score,min_years,gap_skills,scored_at",
     ),
-    select<{ id: number; posted_at: string | null; first_seen_at: string }>(
+    select<{ id: number; posted_at: string | null; first_seen_at: string;
+             posted_at_precision: "timestamp" | "date" | null }>(
       "jobs",
-      "select=id,posted_at,first_seen_at",
+      "select=id,posted_at,first_seen_at,posted_at_precision",
     ),
   ]);
 
   const scoreByJob = new Map(scores.map((s) => [s.job_id, s]));
+  const dateOnlyJobs = new Set(
+    jobs.filter((j) => j.posted_at_precision === "date").map((j) => j.id),
+  );
   const applied = apps.filter((a) => a.applied_at !== null);
   const responded = applied.filter(
     (a) => a.responded_at !== null || RESPONDED.has(a.status),
@@ -382,9 +412,7 @@ export async function getFunnel() {
       expKey:
         minYears === null ? "unstated" :
         minYears < 2 ? "0-2y" : minYears < 4 ? "2-4y" : "4y+",
-      latencyKey:
-        hours === null ? "unknown" :
-        hours < 6 ? "<6h" : hours <= 48 ? "6-48h" : ">48h",
+      latencyKey: latencyBucket(hours, dateOnlyJobs.has(a.job_id)),
     };
   });
 
@@ -398,7 +426,7 @@ export async function getFunnel() {
   );
   const latency = bucketise(
     rows.map((r) => ({ ...r, key: r.latencyKey })),
-    ["<6h", "6-48h", ">48h", "unknown"],
+    ["<6h", "6-48h", ">48h", "day-precision", "unknown"],
   );
 
   // Calibration: share of this week's scored jobs at 8+. Drifting above ~20%

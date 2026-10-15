@@ -20,9 +20,10 @@ from datetime import timedelta
 
 from ingest.lifecycle import EMPTY_FETCH_GRACE_HOURS, plan
 from ingest.models import RawJob
+from ingest.lifecycle import _payload
 from ingest.normalize import (clean_text, content_hash, html_to_text,
-                              is_india_relevant, parse_epoch_ms, parse_iso,
-                              truncate_for_llm)
+                              is_date_only, is_india_relevant, parse_epoch_ms,
+                              parse_iso, truncate_for_llm)
 
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)
@@ -230,6 +231,34 @@ def test_truncate_keeps_head_and_tail():
     text = "HEAD" + ("x" * 5000) + "TAIL"
     out = truncate_for_llm(text, 500)
     assert out.startswith("HEAD") and out.endswith("TAIL") and len(out) <= 520
+
+
+def test_is_date_only_recognises_a_bare_calendar_day():
+    # Workday's startDate shape: 1,470 of 1,470 live rows at midnight UTC.
+    assert is_date_only("2026-10-15")
+    assert is_date_only(" 2026-10-15 ")
+    for not_a_date in ("2026-10-15T00:00:00Z", "2026-10-15T08:30:00+05:30",
+                       "Posted 3 Days Ago", "", None, 1782114322811):
+        assert not is_date_only(not_a_date), not_a_date
+
+
+def test_payload_precision_is_inferred_recorded_or_null():
+    stamp = datetime(2026, 10, 15, 8, 30, tzinfo=timezone.utc)
+    midnight = datetime(2026, 10, 15, tzinfo=timezone.utc)
+
+    adapter_silent = job()
+    adapter_silent.posted_at = stamp
+    assert _payload(1, adapter_silent, "h", 0)["posted_at_precision"] == "timestamp"
+
+    workday = job()
+    workday.posted_at, workday.posted_at_precision = midnight, "date"
+    assert _payload(1, workday, "h", 0)["posted_at_precision"] == "date"
+
+    # No posted_at means no precision -- the DB check constraint and the
+    # dashboard both read NULL as "aged from first sighting".
+    undated = job()
+    undated.posted_at_precision = "date"
+    assert _payload(1, undated, "h", 0)["posted_at_precision"] is None
 
 
 def test_date_parsers():

@@ -71,6 +71,11 @@ def _payload(company_id: int, job: RawJob, digest: str, reopen_count: int) -> di
         "absolute_url": job.absolute_url,
         "compensation": job.compensation,
         "posted_at": job.posted_at.isoformat() if job.posted_at else None,
+        # Inferred as "timestamp" unless the adapter said otherwise; NULL when
+        # there is no posted_at. Present on every payload so the key set stays
+        # identical across a batch (see the docstring).
+        "posted_at_precision": (job.posted_at_precision or "timestamp")
+                               if job.posted_at else None,
         "last_seen_at": datetime.now(timezone.utc).isoformat(),
         "closed_at": None,
         "reopen_count": reopen_count,

@@ -132,6 +132,50 @@ def test_a_truncated_board_raises_instead_of_diffing():
         adapter._post = original                         # type: ignore[method-assign]
 
 
+def run_fetch_with_detail(detail: dict):
+    """One posting, facet lookup succeeding, detail response as given."""
+    posting = [{"title": "Backend Engineer", "externalPath": "/job/1",
+                "locationsText": "Bengaluru, India", "bulletFields": ["R1"]}]
+
+    def post(url, body, timeout=30):
+        if body.get("limit") == 1:
+            return {"facets": [{"facetParameter": "Location_Country",
+                                "values": [{"id": "IN", "descriptor": "India"}]}]}
+        return {"jobPostings": posting if body.get("offset", 0) == 0 else [],
+                "total": 1}
+
+    original_post, original_detail = adapter._post, adapter._detail
+    try:
+        adapter._post = post                                  # type: ignore[method-assign]
+        adapter._detail = lambda base, path: detail           # type: ignore[method-assign]
+        return adapter.fetch("x|wd1|External")
+    finally:
+        adapter._post, adapter._detail = original_post, original_detail  # type: ignore[method-assign]
+
+
+def test_a_date_only_start_date_is_flagged_as_a_date():
+    [job] = run_fetch_with_detail({"startDate": "2026-10-15", "jobReqId": "R1"})
+    assert job.posted_at is not None and job.posted_at.hour == 0
+    assert job.posted_at_precision == "date", job.posted_at_precision
+
+
+def test_a_full_timestamp_is_flagged_as_a_timestamp():
+    [job] = run_fetch_with_detail({"startDate": "2026-10-15T09:12:00Z", "jobReqId": "R1"})
+    assert job.posted_at_precision == "timestamp"
+
+
+def test_an_unparseable_start_date_falls_back_to_posted_on_as_before():
+    [job] = run_fetch_with_detail({"startDate": "garbage", "postedOn": "2026-10-14",
+                                   "jobReqId": "R1"})
+    assert job.posted_at is not None and job.posted_at.day == 14
+    assert job.posted_at_precision == "date"
+
+
+def test_no_date_at_all_has_no_precision():
+    [job] = run_fetch_with_detail({"jobReqId": "R1"})
+    assert job.posted_at is None and job.posted_at_precision is None
+
+
 # --- transient vs permanent --------------------------------------------
 
 class FakeResp:
