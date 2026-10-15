@@ -1,7 +1,8 @@
-import { getQueue, getQueueMeta } from "@/lib/queries";
+import { getQueue, getQueueMeta, getStatus } from "@/lib/queries";
 import { effectivePostedAt, formatAge, hoursSince } from "@/lib/db";
 import QueueList from "./QueueList";
 import type { CardJob } from "./JobCard";
+import StatusStrip from "./StatusStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,9 @@ export default async function QueuePage({
   params: Promise<{ secret: string }>;
 }) {
   const { secret } = await params;
-  const [rows, meta] = await Promise.all([getQueue(), getQueueMeta()]);
+  const [rows, meta, status] = await Promise.all([
+    getQueue(), getQueueMeta(), getStatus(),
+  ]);
 
   const jobs: CardJob[] = rows.map((row) => {
     const posted = effectivePostedAt(row);
@@ -39,6 +42,8 @@ export default async function QueuePage({
 
   return (
     <>
+      <StatusStrip status={status} />
+
       {/* An empty queue and an unfinished scoring pass look identical without
           this. The distinction matters daily: one means "nothing today", the
           other means "the pipeline stalled and you are flying blind". */}
@@ -51,10 +56,11 @@ export default async function QueuePage({
           </svg>
           <div>
             <b>{meta.unscored} of {meta.openJobs} postings are not scored yet</b> — this
-            queue is incomplete, not empty. Groq&apos;s free tier allows 100,000
-            tokens per day per model; run <code>python -m score.run</code> once it
-            resets, or pass <code>--model openai/gpt-oss-120b --batch-size 2</code> to
-            use a different model&apos;s separate daily budget.
+            queue is incomplete, not empty. The next pipeline run scores them;
+            to do it now, run <code>python -m score.run</code>. If that stalls,{" "}
+            <code>python -m score.healthcheck</code> shows which providers are
+            answering — the mix in the status line above shows which one has
+            actually been doing the work.
           </div>
         </div>
       )}

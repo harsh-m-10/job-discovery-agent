@@ -212,6 +212,100 @@ export async function getQueueMeta() {
   };
 }
 
+// --- pipeline status ----------------------------------------------------
+
+type RunBoard = {
+  company: string; ats: string; token: string;
+  error?: string; transient?: boolean; suppressed_closes?: number;
+};
+
+type RunRow = {
+  started_at: string;
+  finished_at: string | null;
+  jobs_seen: number | null;
+  jobs_new: number | null;
+  jobs_closed: number | null;
+  trigger_source: string | null;
+  duration_s: number | null;
+  boards: RunBoard[] | null;
+};
+
+export type PipelineStatus = {
+  lastRun: RunRow | null;
+  lastRunAgeHours: number | null;
+  runsLast24h: number;
+  failingBoards: { label: string; error: string; transient: boolean }[];
+  inactiveBoards: string[];
+  providerMix: { provider: string; count: number }[];
+  providerMixDays: number;
+};
+
+const PROVIDER_MIX_DAYS = 7;
+
+/**
+ * The status strip (docs/PLAN.md 1.2). Replaces a banner that gave advice for
+ * a provider which has since been disabled and a `--model` flag that never
+ * existed — the one piece of in-product operational guidance was wrong.
+ *
+ * Everything here is read from what the pipeline recorded, not inferred:
+ * run_log for cadence and board failures, job_scores.provider for which LLM is
+ * actually carrying the load. Before this, run_log.finished_at, jobs_closed and
+ * job_scores.provider were written on every run and read by nothing (STATE.md
+ * G12).
+ *
+ * Timestamps in query strings come from toISOString(), which ends in "Z". An
+ * isoformat() "+00:00" would be decoded as a space and PostgREST would 400 —
+ * the bug notify/alerts.py:_since already documents.
+ */
+export async function getStatus(): Promise<PipelineStatus> {
+  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
+  const mixSince = new Date(Date.now() - PROVIDER_MIX_DAYS * 86_400_000).toISOString();
+
+  const [latest, recent, inactive, scored] = await Promise.all([
+    select<RunRow>(
+      "run_log",
+      "select=started_at,finished_at,jobs_seen,jobs_new,jobs_closed," +
+        "trigger_source,duration_s,boards&worker=eq.ingest" +
+        "&order=started_at.desc&limit=1",
+    ),
+    select<{ started_at: string }>(
+      "run_log", `select=started_at&worker=eq.ingest&started_at=gte.${dayAgo}`,
+    ),
+    select<{ name: string }>("companies", "select=name&active=is.false&order=name.asc"),
+    select<{ provider: string | null }>(
+      "job_scores",
+      `select=provider&fit_score=not.is.null&scored_at=gte.${mixSince}`,
+    ),
+  ]);
+
+  const lastRun = latest[0] ?? null;
+  const failingBoards = (lastRun?.boards ?? [])
+    .filter((b) => b.error)
+    .map((b) => ({
+      label: `${b.company} (${b.ats})`,
+      error: b.error ?? "",
+      transient: Boolean(b.transient),
+    }));
+
+  const mix = new Map<string, number>();
+  for (const s of scored) {
+    const key = s.provider ?? "unrecorded";
+    mix.set(key, (mix.get(key) ?? 0) + 1);
+  }
+
+  return {
+    lastRun,
+    lastRunAgeHours: lastRun ? hoursSince(new Date(lastRun.started_at)) : null,
+    runsLast24h: recent.length,
+    failingBoards,
+    inactiveBoards: inactive.map((c) => c.name),
+    providerMix: [...mix.entries()]
+      .map(([provider, count]) => ({ provider, count }))
+      .sort((a, b) => b.count - a.count),
+    providerMixDays: PROVIDER_MIX_DAYS,
+  };
+}
+
 export async function getJob(jobId: number) {
   const [jobs, scores, apps, referrals] = await Promise.all([
     select<JobRow & {
