@@ -57,6 +57,9 @@ jobs:
       - name: Store and run_log telemetry tests
         run: python tests/test_store.py
 
+      - name: Heartbeat tests
+        run: python tests/test_heartbeat.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 
