@@ -32,7 +32,10 @@ import yaml
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
+
+from common.geo import names_india   # noqa: E402
 SEEDS = ROOT / "seeds" / "companies.yaml"
 VERIFIED = ROOT / "seeds" / "companies.verified.yaml"
 REPORT = ROOT / "seeds" / "verify_report.json"
@@ -54,7 +57,6 @@ ENDPOINTS = {
     "ashby": "https://api.ashbyhq.com/posting-api/job-board/{token}",
 }
 
-INDIA_RE = re.compile(r"bengaluru|bangalore|karnataka|hyderabad|india", re.I)
 REMOTE_RE = re.compile(r"remote", re.I)
 
 
@@ -80,13 +82,22 @@ def load_settings() -> dict:
 
 
 def looks_india(location: str | None) -> bool:
-    """India-located, or remote roles that name India. Deliberately stricter
-    than the Layer 1 keyword filter — 'Remote - US' must not count here."""
+    """India-located, or remote roles that name India.
+
+    Deliberately stricter than the Layer 1 gate: a posting with no location at
+    all counts as a keep there (the description usually names the office) but
+    must not count as evidence here, because this script exists to decide
+    whether a board is worth adding at all.
+
+    The city vocabulary is shared — common/geo.py, driven by
+    config/settings.yaml — so adding a city reaches this script too. Only the
+    policy above is local.
+    """
     if not location:
         return False
-    if INDIA_RE.search(location):
+    if names_india(location):
         return True
-    return bool(REMOTE_RE.search(location) and INDIA_RE.search(location))
+    return bool(REMOTE_RE.search(location) and names_india(location))
 
 
 def extract(ats: str, payload) -> list[tuple[str, str]]:

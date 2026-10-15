@@ -219,14 +219,79 @@ headcount_penalties:
   large: 0.0       # 1000+
   unknown: 0.0
 
-# Layer 1 location filter. A job is kept if its location string matches any of
-# these (case-insensitive substring), or if the string is empty/unknown.
+# Layer 1 location filter — the single vocabulary for "is this in India?",
+# compiled by common/geo.py and used by the ingest gate, the Workday facet
+# picker and scripts/verify_boards.py alike.
+#
+# Matched as WHOLE WORDS, case-insensitively, not substrings. That is what keeps
+# "India" out of "Indiana" and "Indianapolis" (232 postings on Target's state
+# facet alone). Two consequences worth knowing before editing:
+#
+#   * Never add the bare country code "in". Case-insensitively it matches the
+#     English word "in" and would admit every remote-US posting in the corpus.
+#   * "remote" does NOT belong here, though it used to. Remote is handled
+#     separately in common/geo.py, which requires a remote posting to ALSO name
+#     India somewhere; bare "Remote" is overwhelmingly Remote-US, and listing it
+#     as an India keyword would have let all of it through.
+#
+# Measured 2026-10-15 across all 120 verified boards fetched with no filter
+# (14,294 postings, of which the gate kept 2,264), widening this list recovered
+# 17 postings: Delhi 10, Lucknow 6, Kolkata 1. Delhi was the real bug — the list
+# carried the NCR satellites Gurgaon, Gurugram and Noida but not the city they
+# orbit. Everything below the "no current postings" marker recovered nothing on
+# today's roster and is cheap insurance for the India-HQ employers Phase 6 adds.
 location_keywords:
+  # country and the metros that actually appear in the corpus today
+  - india
   - bengaluru
   - bangalore
+  - hyderabad
+  - pune
+  - chennai
+  - mumbai
+  - delhi
+  - new delhi
+  - noida
+  - gurgaon
+  - gurugram
+  - kolkata
+  - lucknow
+  # states seen in location strings
   - karnataka
-  - india
-  - remote
+  - telangana
+  - tamil nadu
+  - maharashtra
+  - haryana
+  # --- no current postings: insurance for Phase 6 ---
+  - ahmedabad
+  - coimbatore
+  - thiruvananthapuram
+  - trivandrum
+  - kochi
+  - cochin
+  - ernakulam
+  - indore
+  - nagpur
+  - jaipur
+  - bhubaneswar
+  - vadodara
+  - baroda
+  - mysuru
+  - mysore
+  - chandigarh
+  - surat
+  - visakhapatnam
+  - nashik
+  - thane
+  - navi mumbai
+  - kerala
+  - gujarat
+  - west bengal
+  - rajasthan
+  - odisha
+  - andhra pradesh
+  - madhya pradesh
+  - uttar pradesh
 
 # Board health
 max_consecutive_failures: 5

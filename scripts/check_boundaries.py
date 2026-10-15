@@ -25,6 +25,16 @@ LAYER1 = ROOT / "ingest"
 FORBIDDEN_IN_LAYER1 = re.compile(r"\b(connections|applications|job_scores)\b")
 FORBIDDEN_IMPORTS = re.compile(r"^\s*(?:from|import)\s+(score|notify)\b", re.M)
 
+# `common/` is the shared, layer-free bottom of the stack: any layer may import
+# it and it may import none of them. That is what lets one definition of a rule
+# (the India gate, and later the company key) be used by Layer 1, Layer 2 and a
+# diagnostic script without any of them depending on each other. The moment
+# common/ imports a layer, it stops being shared and becomes a cycle.
+COMMON = ROOT / "common"
+COMMON_FORBIDDEN_IMPORTS = re.compile(
+    r"^\s*(?:from|import)\s+(ingest|score|notify|dashboard)\b", re.M
+)
+
 # Spec §2: scraping any of these risks the account the referral channel depends
 # on, so the constraint is checked mechanically rather than trusted to memory.
 # Matched only in URL position — the codebase legitimately discusses LinkedIn in
@@ -93,6 +103,16 @@ def main() -> int:
             line = text[:match.start()].count("\n") + 1
             failures.append(f"{rel}:{line}: Layer 1 imports from {match.group(1)}/")
 
+    for path in py_files(COMMON):
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT)
+        for match in COMMON_FORBIDDEN_IMPORTS.finditer(text):
+            line = text[:match.start()].count("\n") + 1
+            failures.append(
+                f"{rel}:{line}: common/ imports from {match.group(1)}/ — it must "
+                f"depend on no layer (see the COMMON note in this file)"
+            )
+
     for path in all_source():
         # This checker names the banned hosts by definition; exempt itself.
         if path.resolve() == Path(__file__).resolve():
@@ -110,7 +130,8 @@ def main() -> int:
         for f in failures:
             print(f"  {f}")
         return 1
-    print("boundaries ok: Layer 1 is Layer-2-free, no banned platform is contacted")
+    print("boundaries ok: Layer 1 is Layer-2-free, common/ depends on no layer, "
+          "no banned platform is contacted")
     return 0
 
 

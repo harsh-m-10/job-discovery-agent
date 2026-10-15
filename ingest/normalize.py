@@ -11,6 +11,8 @@ import html
 import re
 from datetime import datetime, timezone
 
+from common.geo import REMOTE, india_pattern, is_india_relevant  # noqa: F401
+
 BLOCK_TAGS = re.compile(
     r"</?(?:p|div|br|li|ul|ol|tr|h[1-6]|section|article|table)\b[^>]*>", re.I
 )
@@ -18,16 +20,14 @@ ANY_TAG = re.compile(r"<[^>]+>")
 WS = re.compile(r"[ \t\r\f\v]+")
 BLANKS = re.compile(r"\n{3,}")
 
-# Kept: India-located, or a remote posting that names India.
-# "Remote" on its own is not enough — most of it is Remote-US.
-# Note: no bare "IN" country code here — under re.I it would match the English
-# word "in" and let every remote-US posting through. Lever's country field is
-# checked separately in its adapter.
-INDIA = re.compile(
-    r"\bbengaluru\b|\bbangalore\b|\bkarnataka\b|\bindia\b|\bhyderabad\b|\bgurgaon\b|\bgurugram\b|\bpune\b|\bnoida\b|\bchennai\b|\bmumbai\b",
-    re.I,
-)
-REMOTE = re.compile(r"\bremote\b|\banywhere\b|\bworldwide\b|\bglobal\b", re.I)
+# The location gate moved to common/geo.py in Phase 1.1 so that this module,
+# the Workday facet picker and scripts/verify_boards.py stop keeping three
+# separate city lists that had already drifted apart. The vocabulary now lives
+# in config/settings.yaml.
+#
+# Re-exported here because `from ingest.normalize import is_india_relevant` is
+# the import six modules already use, and because Layer 1 remains the layer that
+# owns the gate conceptually even though the matcher is shared.
 
 
 def html_to_text(raw: str | None) -> str:
@@ -67,23 +67,6 @@ def clean_text(text: str | None) -> str:
 def content_hash(title: str, location: str, description: str) -> str:
     payload = f"{title.strip()}|{location.strip()}|{description.strip()}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def is_india_relevant(location: str | None, description: str = "") -> bool:
-    """Layer 1 location gate (spec §6.2).
-
-    Postings with no location string at all are kept: several boards omit it and
-    the description usually names the office. The Phase 2 prefilter sees the
-    description and can still drop them.
-    """
-    loc = (location or "").strip()
-    if not loc:
-        return True
-    if INDIA.search(loc):
-        return True
-    if REMOTE.search(loc) and INDIA.search(f"{loc} {description[:1500]}"):
-        return True
-    return False
 
 
 def truncate_for_llm(text: str, limit: int) -> str:

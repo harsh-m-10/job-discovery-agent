@@ -60,6 +60,9 @@ jobs:
       - name: Heartbeat tests
         run: python tests/test_heartbeat.py
 
+      - name: India location gate tests
+        run: python tests/test_geo.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

@@ -27,6 +27,8 @@ import requests
 
 from ..http import session
 from ..models import BoardFetchError, RawJob
+from common.geo import names_india
+
 from ..normalize import clean_text, html_to_text, parse_iso
 
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -34,9 +36,13 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 PAGE = 20                 # Workday caps the listing page size
 MAX_PAGES = 40            # guard: a facet that fails to narrow must not run away
-INDIA = re.compile(r"\bindia\b|\bbengaluru\b|\bbangalore\b|\bkarnataka\b|"
-                   r"\bhyderabad\b|\bchennai\b|\bpune\b|\bgurgaon\b|\bgurugram\b|"
-                   r"\bnoida\b|\bmumbai\b", re.I)
+# The private city list that used to live here is gone: the one place it was
+# used -- the fallback row filter in fetch(), for when a tenant exposes no
+# location facet -- now asks common.geo.names_india, so there is a single
+# vocabulary in config/settings.yaml.
+#
+# INDIA_FACET below is NOT the same question and deliberately stays narrow; see
+# its own note.
 
 # "3 days ago" / "Posted 30+ Days Ago" — Workday gives no absolute posting date
 # on the listing, only this label. The detail response carries a real date.
@@ -202,7 +208,7 @@ class WorkdayAdapter:
 
             # When the facet lookup failed the server-side narrowing did not
             # happen, so drop non-India rows before paying for a detail fetch.
-            if not facets and not INDIA.search(location):
+            if not facets and not names_india(location):
                 continue
 
             detail = self._detail(base, external_path)
