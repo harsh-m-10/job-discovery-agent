@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Pipeline liveness for the independent watchdog in apps_script/outcomes.gs
- * (docs/PLAN.md 9.2). Authenticated by x-dashboard-secret in middleware.ts.
+ * (docs/PLAN.md 9.2). Authenticated by x-dashboard-secret in proxy.ts.
  *
  * Reports the age of the newest *automated* ingest run: a manual spot check
  * with --only polls a handful of boards and must not make a dead pipeline look

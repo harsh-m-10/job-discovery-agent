@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 /**
  * Outcome email intake (docs/PLAN.md 4.3). Called by apps_script/outcomes.gs
  * from the operator's Gmail, authenticated by the x-dashboard-secret header in
- * middleware.ts like every /api route.
+ * proxy.ts like every /api route.
  *
  * Deliberately dumb: it validates and stores. Classification, matching and the
  * status change happen in Python (outcomes/run.py) on the next pipeline run,
