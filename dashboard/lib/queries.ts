@@ -391,7 +391,16 @@ type FunnelRow = {
   ping_lag_hours: number | null;
   ping_to_apply_hours: number | null;
   applied_before_ping: boolean | null;
+  // Phase 4.5: outcome stages from matched emails (db/migrations/0010)
+  acknowledged_at: string | null;
+  rejected_at: string | null;
+  assessment_at: string | null;
+  interview_at: string | null;
+  rejected_within_48h: boolean | null;
+  notice_period_days: number | null;
 };
+
+export type OutcomeStage = { label: string; n: number; note?: string };
 
 export type Stage = { label: string; owner: "machine" | "you"; median: number | null; n: number };
 
@@ -452,6 +461,36 @@ export async function getFunnel() {
     { label: "discovered → pinged", owner: "machine", ...stat(nums((a) => a.ping_lag_hours)) },
     { label: "pinged → applied", owner: "you", ...stat(nums((a) => a.ping_to_apply_hours)) },
   ];
+  // Outcome stages (PLAN 4.5). An email-recorded stage or a status the
+  // operator set by hand both count, so the funnel does not depend on Gmail
+  // capture being live.
+  const rejected = applied.filter((a) => a.rejected_at !== null || a.status === "rejected");
+  const interviewed = applied.filter(
+    (a) => a.interview_at !== null || a.status === "interviewing" || a.status === "offer");
+  const outcomes: OutcomeStage[] = [
+    { label: "applied", n: applied.length },
+    { label: "acknowledged", n: applied.filter((a) => a.acknowledged_at !== null).length,
+      note: "from email only" },
+    { label: "any reply", n: applied.filter((a) => a.responded_at !== null).length },
+    { label: "rejected < 48h", n: rejected.filter((a) => a.rejected_within_48h === true).length,
+      note: "automated screen" },
+    { label: "rejected later", n: rejected.filter((a) => a.rejected_within_48h === false).length,
+      note: "a human read it" },
+    { label: "rejected, timing unknown", n: rejected.filter((a) => a.rejected_within_48h === null).length },
+    { label: "assessment", n: applied.filter((a) => a.assessment_at !== null).length },
+    { label: "interview", n: interviewed.length },
+    { label: "offer", n: applied.filter((a) => a.status === "offer").length },
+  ];
+  const interviewsPer10 = applied.length ? (interviewed.length / applied.length) * 10 : null;
+  const notice = bucketise(
+    rows.map((r, i) => {
+      const d = applied[i].notice_period_days;
+      const key = d === null ? "unrecorded" : d <= 30 ? "≤30d" : d <= 60 ? "31–60d"
+        : d <= 90 ? "61–90d" : ">90d";
+      return { ...r, key };
+    }),
+    ["≤30d", "31–60d", "61–90d", ">90d", "unrecorded"],
+  );
   const appliedBeforePing = applied.filter((a) => a.applied_before_ping).length;
   const neverPinged = applied.filter((a) => a.first_ping_at === null).length;
   const family = bucketise(
@@ -511,6 +550,9 @@ export async function getFunnel() {
     latency,
     family,
     stages,
+    outcomes,
+    interviewsPer10,
+    notice,
     appliedBeforePing,
     neverPinged,
     calibration: {

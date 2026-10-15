@@ -4,9 +4,41 @@ import { getJob } from "@/lib/queries";
 import { effectivePostedAt, formatAge, hoursSince } from "@/lib/db";
 import StatusButtons from "../../StatusButtons";
 import Copyable from "./Copyable";
-import { screening as loadScreening } from "@/lib/screening";
+import { screening as loadScreening, type Screening } from "@/lib/screening";
+import ApplyDetails, { type Details } from "./ApplyDetails";
 
 export const dynamic = "force-dynamic";
+
+const DETAIL_COLUMNS = ["notice_period_days", "current_ctc_lpa", "expected_ctc_lpa",
+  "yoe_stated", "resume_variant", "relocation_ok"] as const;
+
+/** True when nothing has been saved yet, so the form is showing defaults. */
+function isPrefilled(app: Record<string, unknown>): boolean {
+  return DETAIL_COLUMNS.every((c) => app[c] === null || app[c] === undefined);
+}
+
+/** "12.5 LPA" / "12,50,000" -> lakhs, or "" if it cannot be read. */
+function lakhs(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value).replace(/,/g, "");
+  const n = parseFloat(text);
+  if (!Number.isFinite(n)) return "";
+  return String(n >= 1000 ? +(n / 100000).toFixed(2) : n);
+}
+
+/** Saved answers win; otherwise the standard screening answers. */
+function detailsFor(app: Record<string, any>, s: Screening | null): Details {
+  const pick = (saved: unknown, fallback: unknown) =>
+    saved !== null && saved !== undefined ? String(saved) : (fallback ?? "") === "" ? "" : String(fallback);
+  return {
+    notice_period_days: pick(app.notice_period_days, s?.notice_period_days),
+    current_ctc_lpa: pick(app.current_ctc_lpa, lakhs(s?.current_ctc)),
+    expected_ctc_lpa: pick(app.expected_ctc_lpa, s?.expected_base_min_lpa ?? lakhs(s?.expected_ctc)),
+    yoe_stated: pick(app.yoe_stated, s?.years_experience_post_grad),
+    resume_variant: pick(app.resume_variant, ""),
+    relocation_ok: app.relocation_ok === true ? "yes" : app.relocation_ok === false ? "no" : "",
+  };
+}
 
 function tierOf(score: number | null): "high" | "mid" | "low" {
   if (score === null) return "low";
@@ -121,6 +153,18 @@ export default async function JobPage({
                 </div>
               )}
           </section>
+
+          {application?.applied_at && (
+            <section className="panel">
+              <div className="panel-title">What the form asked</div>
+              <ApplyDetails
+                jobId={job.id}
+                secret={secret}
+                initial={detailsFor(application, screening)}
+                prefilled={isPrefilled(application)}
+              />
+            </section>
+          )}
 
           <section className="panel">
             <div className="panel-title">Referral contacts</div>

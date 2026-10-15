@@ -102,6 +102,31 @@ export default async function FunnelPage() {
         )}
       </section>
 
+      <section className="panel">
+        <div className="panel-title">
+          Outcomes · {f.interviewsPer10 === null ? "—" : f.interviewsPer10.toFixed(1)} interviews per 10 applications
+        </div>
+        {f.outcomes.map((s) => (
+          <div className="bar-row" key={s.label}>
+            <div className="bar-label">{s.label}</div>
+            <div className="bar-track">
+              <div className="bar-fill"
+                   style={{ width: `${f.totals.applied ? (s.n / f.totals.applied) * 100 : 0}%` }} />
+              <div className="bar-num">
+                <span>{s.n}</span>
+                {s.note && <span className="rate">{s.note}</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+        <div className="note">
+          Interviews per 10 applications is the number every targeting decision
+          should be made from (PLAN section 6). Stages fill in automatically from
+          outcome emails once the Gmail script is running; the Review tab holds
+          any email it could not place.
+        </div>
+      </section>
+
       <Comparison
         title="By channel"
         buckets={f.channel}
@@ -142,6 +167,12 @@ export default async function FunnelPage() {
           {f.neverPinged > 0 && <> {f.neverPinged} were never pinged.</>}
         </div>
       </section>
+
+      <Comparison
+        title="By notice period stated"
+        buckets={f.notice}
+        hint="A common screen-out for Indian roles. Filled from 'What the form asked' on each job."
+      />
 
       <Comparison
         title="By role family"
