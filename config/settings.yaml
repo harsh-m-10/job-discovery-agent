@@ -1,6 +1,16 @@
 ping_threshold: 6.5
 max_pings_per_day: 40
-poll_interval_minutes: 15
+# Minimum minutes between polls of one board, by company priority. 0 means
+# every run. Read by ingest/run.py:is_due. This key used to be a single "15"
+# that nothing read, while the real cadence was hardcoded in run.py; the values
+# below are that hardcoded cadence, moved here unchanged (Phase 2.3).
+#   1 = boards with >= 15 India roles: every run
+#   2 = hourly (55, not 60, so a run arriving a few minutes early still polls)
+#   3 = daily (23h for the same reason)
+poll_interval_minutes:
+  1: 0
+  2: 55
+  3: 1380
 max_experience_years: 4
 
 # ---------------------------------------------------------------------------

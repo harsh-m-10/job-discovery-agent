@@ -45,8 +45,22 @@ ROOT = Path(__file__).resolve().parents[1]
 SETTINGS = ROOT / "config" / "settings.yaml"
 VERIFIED = ROOT / "seeds" / "companies.verified.yaml"
 
-# priority -> minimum minutes between polls (spec §5: 1 every run, 2 hourly, 3 daily)
-CADENCE = {1: 0, 2: 55, 3: 23 * 60}
+# priority -> minimum minutes between polls (spec §5: 1 every run, 2 hourly,
+# 3 daily). The live values come from config/settings.yaml:poll_interval_minutes;
+# this is only the fallback for a config that lacks or mangles the key, and it
+# is deliberately the same numbers so a bad config cannot change the cadence.
+DEFAULT_CADENCE = {1: 0, 2: 55, 3: 23 * 60}
+
+
+def cadence_from(settings: dict) -> dict[int, int]:
+    raw = settings.get("poll_interval_minutes")
+    if not isinstance(raw, dict):
+        return dict(DEFAULT_CADENCE)
+    try:
+        parsed = {int(k): int(v) for k, v in raw.items()}
+    except (TypeError, ValueError):
+        return dict(DEFAULT_CADENCE)
+    return {**DEFAULT_CADENCE, **parsed}
 
 
 def load_settings() -> dict:
@@ -54,10 +68,12 @@ def load_settings() -> dict:
         return yaml.safe_load(fh) or {}
 
 
-def is_due(company: dict, force: bool) -> bool:
+def is_due(company: dict, force: bool,
+           cadence: dict[int, int] | None = None) -> bool:
     if force:
         return True
-    gap = CADENCE.get(int(company.get("priority") or 2), 55)
+    table = cadence or DEFAULT_CADENCE
+    gap = table.get(int(company.get("priority") or 2), table.get(2, 55))
     if gap == 0:
         return True
     last = company.get("last_ok_at")
@@ -133,7 +149,9 @@ def main() -> int:
         wanted = {t.strip().lower() for t in args.only.split(",")}
         companies = [c for c in companies if c["board_token"].lower() in wanted]
 
-    due = [c for c in companies if is_due(c, args.all or args.only is not None)]
+    cadence = cadence_from(settings)
+    due = [c for c in companies
+           if is_due(c, args.all or args.only is not None, cadence)]
     started = time.monotonic()
     run_id = store.start_run("ingest") if store else None
     print(f"{len(due)} of {len(companies)} boards due"

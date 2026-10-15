@@ -261,6 +261,24 @@ def test_payload_precision_is_inferred_recorded_or_null():
     assert _payload(1, undated, "h", 0)["posted_at_precision"] is None
 
 
+def test_poll_cadence_comes_from_config_and_matches_the_old_constants():
+    from ingest.run import DEFAULT_CADENCE, cadence_from, is_due, load_settings
+    assert cadence_from(load_settings()) == {1: 0, 2: 55, 3: 1380}
+    assert DEFAULT_CADENCE == {1: 0, 2: 55, 3: 1380},         "the fallback must equal the live cadence, or a bad config changes it"
+    # The old single-integer form, and junk, both fall back rather than crash.
+    assert cadence_from({"poll_interval_minutes": 15}) == DEFAULT_CADENCE
+    assert cadence_from({"poll_interval_minutes": {"a": "b"}}) == DEFAULT_CADENCE
+
+    now = datetime.now(timezone.utc)
+    recent = {"priority": 3, "last_ok_at": (now - timedelta(hours=2)).isoformat()}
+    stale = {"priority": 3, "last_ok_at": (now - timedelta(hours=24)).isoformat()}
+    assert not is_due(recent, False, {3: 1380})
+    assert is_due(stale, False, {3: 1380})
+    assert is_due(recent, False, {3: 60}), "the config value is not being used"
+    assert is_due({"priority": 1, "last_ok_at": now.isoformat()}, False, {1: 0})
+    assert is_due(recent, True, {3: 1380}), "force must override cadence"
+
+
 def test_date_parsers():
     assert parse_iso("2026-03-04T00:02:52.786+00:00").year == 2026
     assert parse_iso("2026-03-04T00:02:52Z").tzinfo is not None
