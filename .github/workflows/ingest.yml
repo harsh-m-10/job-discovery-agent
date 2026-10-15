@@ -110,10 +110,10 @@ jobs:
         # died as "no email transport configured" — the pipeline ran, scored,
         # and then dropped its only output on the floor.
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
-          CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+          # Instant channels (notify/instant.py): an ntfy push and an email from
+          # Resend's non-Gmail sender for every match. Without RESEND_API_KEY
+          # the match email falls back to the SMTP path below.
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}

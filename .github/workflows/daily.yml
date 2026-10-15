@@ -1,0 +1,40 @@
+name: daily
+
+# The evening digest (decided 2026-10-15): matches pinged in the last 24h that
+# are still untouched, best first, and the size of the queue. notify/daily.py.
+# Instant pings are per match (notify/instant.py); this is the look-back.
+
+on:
+  schedule:
+    # 14:43 UTC = 20:13 IST, off the hour.
+    - cron: "43 14 * * *"
+  workflow_dispatch:
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Send the daily digest
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+          DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+        run: python -m notify.daily

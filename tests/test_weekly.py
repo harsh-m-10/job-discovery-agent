@@ -84,6 +84,24 @@ def test_an_empty_week_says_why_rather_than_showing_zeros_silently():
     assert "Nothing to measure without applications" in body
 
 
+def test_the_trigger_mix_flags_a_clocked_trigger_that_went_quiet():
+    trig = ([{"fired_at": iso(NOW - timedelta(minutes=15 * i)), "source": "cronjob",
+              "outcome": "ran"} for i in range(4)]
+            + [{"fired_at": iso(NOW - timedelta(hours=5)), "source": "cf", "outcome": "lease"}]
+            + [{"fired_at": iso(NOW - timedelta(hours=30)), "source": "apps-script",
+                "outcome": "ran"}])
+    _, body = compose(base(triggers=trig))
+    lines = {l.split()[0]: l for l in body.splitlines() if "fires:" in l}
+    assert "4 fires: 4 ran, 0 collapsed" in lines["cronjob"] and "QUIET" not in lines["cronjob"]
+    assert "1 fires: 0 ran, 1 collapsed" in lines["cf"] and "QUIET" in lines["cf"], lines["cf"]
+    assert "QUIET" not in lines["apps-script"], "a standby is quiet by design"
+
+
+def test_a_clocked_trigger_with_no_fires_at_all_is_flagged():
+    _, body = compose(base(triggers=[]))
+    assert any("cf" in l and "never" in l and "QUIET" in l for l in body.splitlines())
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

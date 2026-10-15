@@ -8,16 +8,12 @@ Deduplication is the whole job here. A job is pinged at most once in its
 lifetime, enforced by a lookup against `notifications` rather than by timing, so
 a delayed or repeated GitHub Actions run cannot double-send.
 
-Two channels, shaped by what each is good at. WhatsApp goes one message per job:
-it is a phone ping meant to be glanced at, and CallMeBot truncates long bodies.
-Email goes one digest per run, because the volume that made a per-job mail
-reasonable no longer holds — at 92 boards a backlog run is 61 jobs, and 61
-separate mails is not an inbox anyone reads. Every job in a digest still gets
-its own `notifications` row, so dedupe stays per job and a later failure cannot
-re-send the whole batch.
-
-No daily cap. The dedupe check already bounds a runaway to one mail per job
-ever, and the digest bounds a burst to one mail per run.
+Every match goes out at once on two channels (decided 2026-10-15): an ntfy.sh
+push and one email from a non-Gmail sender, subject "[JOB 8.4] ..." -- see
+notify/instant.py. Each job gets its own `notifications` row per channel, so
+dedupe stays per job. A job neither channel takes, or one over
+max_pings_per_day, goes into a single overflow digest for the run rather than
+being dropped. The once-a-day summary is notify/daily.py.
 """
 
 from __future__ import annotations
@@ -45,21 +41,13 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from notify import email as email_channel   # noqa: E402
-from notify import telegram                 # noqa: E402
+from notify import instant                  # noqa: E402
 from notify import whatsapp                 # noqa: E402
 
-# Instant channels in order of preference. A job goes to the first configured
-# one; anything it does not take (failure, or over the daily cap) goes into the
-# email digest, so no job is ever dropped for want of a channel.
-INSTANT_CHANNELS = (("telegram", telegram), ("whatsapp", whatsapp))
-
-
-def instant_channel():
-    """-> (name, module) for the first configured instant channel, or None."""
-    for name, module in INSTANT_CHANNELS:
-        if module.configured():
-            return name, module
-    return None
+# Channel names in `notifications`. Both instant channels go out for every job
+# (decided 2026-10-15): an ntfy push and one email from a non-Gmail sender.
+# "email" is the overflow digest, for jobs neither instant channel took.
+INSTANT_CHANNELS = ("ntfy", "email-instant")
 
 
 def pings_sent_today(channels: tuple[str, ...]) -> int:
@@ -73,9 +61,10 @@ def pings_sent_today(channels: tuple[str, ...]) -> int:
     midnight = datetime.now(ist).replace(hour=0, minute=0, second=0, microsecond=0)
     since = midnight.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = get_all(
-        f"notifications?select=id&ok=is.true&sent_at=gte.{since}"
+        f"notifications?select=job_id&ok=is.true&sent_at=gte.{since}"
         f"&channel=in.({','.join(channels)})", db_headers())
-    return len(rows)
+    # Distinct jobs: one job is two rows now, a push and an email.
+    return len({r.get("job_id") for r in rows})
 
 SETTINGS = ROOT / "config" / "settings.yaml"
 
@@ -325,9 +314,9 @@ def digest(entries: list[tuple[dict, str]], threshold: float,
     the best one: the whole point of a digest is that it is triageable from the
     notification list without opening it.
 
-    `entries` carries the per-job WhatsApp error alongside each job. Those are
-    summarised once at the foot rather than repeated per job — when WhatsApp is
-    simply unconfigured all 61 reasons are the same string.
+    `entries` carries why the instant channels did not take each job. Those
+    are summarised once at the foot rather than repeated per job -- when a
+    channel is simply unconfigured every reason is the same string.
     """
     jobs = [job for job, _ in entries]
     top = jobs[0]
@@ -345,8 +334,6 @@ def digest(entries: list[tuple[dict, str]], threshold: float,
         lines.append("")
 
     reasons = sorted({reason for _, reason in entries})
-    # (Neutral wording: since Phase 3 the instant channel may be Telegram,
-    # WhatsApp, or neither.)
     lines.append("=" * 58)
     lines.append("Delivered by email rather than as an instant ping: "
                  + ("; ".join(reasons) if reasons else "unknown"))
@@ -390,76 +377,67 @@ def main() -> int:
         return 0
 
     if args.dry_run:
-        channel = instant_channel()
-        if channel:
-            name, module = channel
-            for job in jobs:
-                print("-" * 50)
-                print(module.format_message(job, dashboard))
+        for job in jobs:
             print("-" * 50)
-        else:
-            # Render exactly what would be sent, digest and all, rather than a
-            # per-job preview of a mail that will never be sent that way.
-            subject, body = digest(
-                [(job, "no instant channel configured") for job in jobs],
-                threshold, dashboard)
-            print(f"Subject: {subject}\n")
-            print(body)
-        print(f"\ndry run — nothing sent. instant channel: "
-              f"{channel[0] if channel else 'none'}, email transport: "
-              f"{email_channel.transport() or 'none'}")
+            print(f"Subject: {instant.subject(job)}\n")
+            print(instant.format_message(job, dashboard))
+        print("-" * 50)
+        print(f"\ndry run — nothing sent. ntfy: "
+              f"{'on' if instant.ntfy_configured() else 'off'}, match email via "
+              f"{instant.email_transport() or 'none'}")
         return 0
 
-    # An unconfigured CallMeBot is a settled state, not a per-job failure: it
-    # will refuse all 61 pings for the same reason and leave 61 identical
-    # "not set" rows behind. Decide once, and if it is not set up, go straight
-    # to email rather than logging a failure per job. A configured-but-broken
-    # CallMeBot still falls through per job, which is the case that needs the
-    # per-job record.
-    channel = instant_channel()
-    if channel is None:
-        print("no instant channel configured — delivering by email\n")
-
-    # max_pings_per_day (Phase 3.1; the key existed and nothing read it). Jobs
-    # over the cap are not dropped: they go to the digest like any other job
-    # the instant channel did not take. Highest scores go first, because
-    # `jobs` arrives sorted by descending fit.
+    # max_pings_per_day (Phase 3.1). A job over the cap is not dropped: it goes
+    # into the digest. Highest scores go first, because `jobs` arrives sorted by
+    # descending fit.
     cap = int(settings.get("max_pings_per_day", 0) or 0)
     budget = None
-    if channel and cap > 0:
-        budget = max(0, cap - pings_sent_today(tuple(n for n, _ in INSTANT_CHANNELS)))
-        print(f"{channel[0]}: {budget} of {cap} pings left today (IST)\n")
+    if cap > 0:
+        budget = max(0, cap - pings_sent_today(INSTANT_CHANNELS))
+        print(f"instant: {budget} of {cap} left today (IST)\n")
 
     sent = failed = 0
-    # Jobs that still need email, paired with why the instant channel did not
-    # take them. Collected rather than sent inline so one run produces one
-    # email: a backlog run can be 61 jobs, and 61 mails is not a usable inbox.
+    # Jobs that still need email, paired with why the instant channels did not
+    # take them. Collected so one run produces at most one digest.
     for_email: list[tuple[dict, str]] = []
 
     for job in jobs:
-        if channel is None:
-            for_email.append((job, "no instant channel configured"))
-            continue
-        name, module = channel
         if budget is not None and budget <= 0:
             for_email.append((job, f"daily ping cap ({cap}) reached"))
             continue
-        try:
-            module.send(module.format_message(job, dashboard))
-            record(job["job_id"], name, True, None)
+        delivered, why = [], []
+        if instant.ntfy_configured():
+            try:
+                instant.send_ntfy(instant.ntfy_payload(job, dashboard))
+                record(job["job_id"], "ntfy", True, None)
+                delivered.append("ntfy")
+            except Exception as exc:
+                record(job["job_id"], "ntfy", False, str(exc))
+                why.append(f"ntfy: {exc}")
+        else:
+            why.append("ntfy: NTFY_TOPIC not set")
+        if instant.email_transport():
+            try:
+                via = instant.send_email(job, dashboard)
+                record(job["job_id"], "email-instant", True, None)
+                delivered.append(f"email/{via}")
+            except Exception as exc:
+                record(job["job_id"], "email-instant", False, str(exc))
+                why.append(f"email: {exc}")
+        else:
+            why.append("email: no transport configured")
+
+        if delivered:
             sent += 1
             if budget is not None:
                 budget -= 1
-            print(f"  {name:<8} {job['fit_score']} {job['title'][:48]}")
-        except Exception as exc:
-            record(job["job_id"], name, False, str(exc))
-            print(f"  FAILED  {job['title'][:48]}: {str(exc)[:90]}")
-            for_email.append((job, f"{name}: {exc}"))
+            print(f"  {'+'.join(delivered):<20} {job['fit_score']} {job['title'][:48]}")
+        else:
+            print(f"  FAILED  {job['title'][:48]}: {'; '.join(why)[:110]}")
+            for_email.append((job, "; ".join(why)))
 
-    # One digest for everything WhatsApp did not deliver. Dedupe is still keyed
-    # per job, so every job in the digest gets its own notifications row — a
-    # single row for the batch would let the whole set re-send after a partial
-    # failure elsewhere.
+    # One digest for everything the instant channels did not deliver. Dedupe is
+    # still keyed per job, so every job in it gets its own notifications row.
     if for_email:
         subject, body = digest(for_email, threshold, dashboard)
         try:

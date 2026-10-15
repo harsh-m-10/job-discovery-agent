@@ -1,6 +1,6 @@
 """LAYER 3. The weekly report (docs/PLAN.md 9.1).
 
-    python -m notify.weekly              # send (email, and Telegram if set up)
+    python -m notify.weekly              # send (email)
     python -m notify.weekly --dry-run    # print, send nothing
 
 Sunday morning, one message that answers "is this working?" from what the
@@ -68,12 +68,13 @@ def collect(now: datetime | None = None) -> dict:
         "threshold": float(load_settings().get("ping_threshold", 6.5)),
         "runs": safe(f"run_log?select=started_at,trigger_source,errors&worker=eq.ingest"
                      f"&started_at=gte.{since}"),
+        "triggers": safe(f"trigger_log?select=fired_at,source,outcome&fired_at=gte.{since}"),
         "new_jobs": safe(f"jobs?select=company_id,first_seen_at,posted_at,posted_at_precision"
                          f"&first_seen_at=gte.{since}"),
         # Each board's first sighting ever, to leave out boards added this week.
         "board_first_seen": _first_seen_by_board(safe("jobs?select=company_id,first_seen_at")),
         "scores": safe(f"job_scores?select=fit_score,provider,provisional&scored_at=gte.{since}"),
-        "pings": safe(f"notifications?select=channel&ok=is.true&job_id=not.is.null"
+        "pings": safe(f"notifications?select=job_id,channel&ok=is.true&job_id=not.is.null"
                       f"&sent_at=gte.{since}"),
         "funnel": safe("v_funnel?select=applied_at,ping_to_apply_hours,interview_at,status,"
                        "rejected_at,responded_at,via_referral"),
@@ -84,6 +85,35 @@ def collect(now: datetime | None = None) -> dict:
         "usage": safe(f"provider_usage?select=provider,jobs_scored,quota_exhausted,errors"
                       f"&day=gte.{since[:10]}"),
     }
+
+
+# Triggers that fire on a clock whatever else is happening (decided
+# 2026-10-15). An hour without a fire from one of these means it has stopped.
+# apps-script fires only when runs are stale, and GitHub's schedule is
+# best-effort, so silence from them is normal and only reported.
+CLOCKED_TRIGGERS = ("cronjob", "cf")
+QUIET_AFTER = timedelta(hours=1)
+
+
+def trigger_mix(rows: list[dict], now: datetime) -> list[str]:
+    """One line per trigger: fires, how many ran vs collapsed into the lease,
+    and when it last fired. A clocked trigger that went quiet is flagged."""
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        by.setdefault(r.get("source") or "?", []).append(r)
+    out = []
+    for source in sorted(set(by) | set(CLOCKED_TRIGGERS),
+                         key=lambda x: (x not in CLOCKED_TRIGGERS, x)):
+        fires = by.get(source, [])
+        ran = sum(1 for r in fires if r.get("outcome") == "ran")
+        last = max((_ts(r["fired_at"]) for r in fires), default=None)
+        when = "never" if last is None else f"last {(now - last).total_seconds() / 3600:.1f}h ago"
+        flag = ""
+        if source in CLOCKED_TRIGGERS and (last is None or now - last > QUIET_AFTER):
+            flag = "  <- QUIET"
+        out.append(f"    {source:<12} {len(fires):>4} fires: {ran} ran, "
+                   f"{len(fires) - ran} collapsed; {when}{flag}")
+    return out
 
 
 def compose(d: dict) -> tuple[str, str]:
@@ -146,13 +176,15 @@ def compose(d: dict) -> tuple[str, str]:
         f"  ingest runs: {len(d['runs'])} ({', '.join(f'{k} {v}' for k, v in sources.most_common())})",
         f"  median gap between automated runs: {h(_median(gaps), ' min')}  (target <= 17 min)",
         f"  runs with board errors: {errored_runs}",
+        "  trigger mix (every fire, including those the lease collapsed):",
+        *trigger_mix(d.get("triggers", []), now),
         f"  new postings: {len(d['new_jobs'])}; discovery latency median "
         f"{h(_median(discover))} (exact posting times, n={len(discover)})",
         f"  boards: {len(d['active'])} active, {len(d['inactive'])} retired",
         "",
         "Matches and pings",
         f"  scored: {len(scored)}; at or above {d['threshold']:g}: {len(relevant)}",
-        f"  pings delivered: {len(d['pings'])} "
+        f"  jobs pinged: {len({p.get('job_id') for p in d['pings']})}; deliveries: {len(d['pings'])} "
         f"({', '.join(f'{k} {v}' for k, v in Counter(p['channel'] for p in d['pings']).most_common()) or 'none'})",
         "",
         "You",
@@ -187,15 +219,8 @@ def main() -> int:
     if args.dry_run:
         return 0
     from notify import email as email_channel
-    from notify import telegram
     email_channel.send(subject, body)
     print("emailed")
-    if telegram.configured():
-        try:
-            telegram.send(subject + "\n\n" + body)
-            print("sent to Telegram")
-        except Exception as exc:
-            print(f"Telegram failed (email went out): {exc}")
     return 0
 
 

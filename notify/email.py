@@ -24,17 +24,28 @@ class NotConfigured(RuntimeError):
 
 
 def transport() -> str | None:
-    if os.environ.get("RESEND_API_KEY") and os.environ.get("ALERT_EMAIL_TO"):
-        return "resend"
+    """SMTP first when it is configured (decided 2026-10-15).
+
+    Digests, alerts and the weekly report go from the operator's own Gmail,
+    and ALERT_EMAIL_FROM is a gmail.com address that Resend would refuse. The
+    instant per-match mail (notify/instant.py) asks for Resend by name. Resend
+    stays the fallback here for a setup without SMTP.
+    """
     if os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASS") \
             and os.environ.get("ALERT_EMAIL_TO"):
         return "smtp"
+    if os.environ.get("RESEND_API_KEY") and os.environ.get("ALERT_EMAIL_TO"):
+        return "resend"
     return None
 
 
-def send(subject: str, body: str, timeout: int = 30) -> str:
-    """-> transport used. Raises NotConfigured if neither is available."""
-    kind = transport()
+def send(subject: str, body: str, timeout: int = 30, *,
+         transport: str | None = None, sender: str | None = None) -> str:
+    """-> transport used. Raises NotConfigured if neither is available.
+
+    `transport` forces one ("resend" | "smtp"); `sender` overrides the From.
+    """
+    kind = transport or _default_transport()
     to_addr = os.environ.get("ALERT_EMAIL_TO", "")
 
     if kind == "resend":
@@ -43,7 +54,7 @@ def send(subject: str, body: str, timeout: int = 30) -> str:
             headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
                      "Content-Type": "application/json"},
             json={
-                "from": os.environ.get("ALERT_EMAIL_FROM", "onboarding@resend.dev"),
+                "from": sender or os.environ.get("ALERT_EMAIL_FROM", "onboarding@resend.dev"),
                 "to": [to_addr],
                 "subject": subject,
                 "text": body,
@@ -57,7 +68,7 @@ def send(subject: str, body: str, timeout: int = 30) -> str:
     if kind == "smtp":
         message = EmailMessage()
         message["Subject"] = subject
-        message["From"] = os.environ.get("ALERT_EMAIL_FROM", os.environ["SMTP_USER"])
+        message["From"] = sender or os.environ.get("ALERT_EMAIL_FROM", os.environ["SMTP_USER"])
         message["To"] = to_addr
         message.set_content(body)
 
@@ -73,3 +84,6 @@ def send(subject: str, body: str, timeout: int = 30) -> str:
         "no email transport configured — set RESEND_API_KEY + ALERT_EMAIL_TO, "
         "or SMTP_USER + SMTP_PASS + ALERT_EMAIL_TO"
     )
+
+
+_default_transport = transport
