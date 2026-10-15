@@ -77,6 +77,22 @@ export async function upsert(table: string, rows: unknown[], onConflict: string)
   return res.json();
 }
 
+/** INSERT ... ON CONFLICT DO NOTHING. -> number of rows actually inserted. */
+export async function insertIgnoringDuplicates(
+  table: string, rows: unknown[], onConflict: string,
+): Promise<number> {
+  const res = await fetch(
+    `${URL_BASE}/rest/v1/${table}?on_conflict=${onConflict}`,
+    {
+      method: "POST",
+      headers: headers({ Prefer: "resolution=ignore-duplicates,return=representation" }),
+      body: JSON.stringify(rows),
+    },
+  );
+  if (!res.ok) throw new Error(`insert ${table}: ${res.status} ${await res.text()}`);
+  return ((await res.json()) as unknown[]).length;
+}
+
 export async function patch(table: string, query: string, body: unknown) {
   const res = await fetch(`${URL_BASE}/rest/v1/${table}?${query}`, {
     method: "PATCH",
