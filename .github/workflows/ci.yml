@@ -93,6 +93,9 @@ jobs:
       - name: LLM resilience tests (rules fallback, circuit breaker, chaos switch)
         run: python tests/test_resilience.py
 
+      - name: Weekly report tests
+        run: python tests/test_weekly.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

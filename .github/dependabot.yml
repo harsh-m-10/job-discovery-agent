@@ -1,0 +1,45 @@
+# Dependency updates (docs/PLAN.md 9.3).
+#
+# Weekly, grouped so routine minor/patch bumps arrive as one PR per ecosystem
+# rather than a stream of them; majors come separately because they are the
+# ones that break. Every PR runs CI (the full suite, the backup self-test and
+# the dashboard build) before anything is merged.
+#
+# The dashboard's Next.js is the reason this exists: it shipped a security fix
+# that this project took late. Security-only updates additionally need
+# "Dependabot security updates" switched on in the repository settings
+# (docs/RUNBOOK.md, section 10).
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:30"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    groups:
+      dashboard-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:30"
+      timezone: Asia/Kolkata
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
