@@ -92,6 +92,11 @@ jobs:
         run: python -m score.run
 
       - name: Notify
+        # Runs even if scoring failed (PLAN non-negotiable 3): jobs scored by
+        # an earlier run, or provisionally by the rules fallback, must still be
+        # pinged. Before this, a scoring failure skipped Notify, so an LLM
+        # outage silenced every ping.
+        if: ${{ !cancelled() }}
         # notify/email.py picks Resend if RESEND_API_KEY is set and falls back
         # to SMTP otherwise. The SMTP_* vars were missing from this step while
         # the watchdog had them, so with no Resend key configured every ping
@@ -115,7 +120,9 @@ jobs:
       - name: Process outcome emails
         # Classifies and matches emails posted by apps_script/outcomes.gs and
         # updates application status (docs/PLAN.md 4.3). Cheap when there is
-        # nothing pending; tolerates the table not existing.
+        # nothing pending; tolerates the table not existing. Independent of
+        # ingest and scoring, so it runs whatever happened to them.
+        if: ${{ !cancelled() }}
         run: python -m outcomes.run
 
       - name: Watchdog

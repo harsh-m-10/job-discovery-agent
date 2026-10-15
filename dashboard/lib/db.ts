@@ -144,6 +144,8 @@ export type QueueRow = {
   first_seen_at: string;
   fit_score: number | null;
   verdict: string;
+  /** Scored by score/rules.py because no LLM was available (db/migrations/0014). */
+  provisional: boolean;
   min_years: number | null;
   max_years: number | null;
   matched_skills: string[] | null;

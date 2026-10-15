@@ -38,9 +38,34 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from ingest.normalize import is_india_relevant   # noqa: E402
-from score.llm import (AllProvidersExhausted, ScoringError,  # noqa: E402
+from score.llm import (USAGE, AllProvidersExhausted, ScoringError,  # noqa: E402
                        apply_headcount_penalty, build_system_prompt,
                        default_providers, score_batch)
+from score.providers import QuotaExhausted       # noqa: E402
+from score.rules import Calibration, score_job   # noqa: E402
+
+
+def simulate_outage(providers: list, names: str) -> None:
+    """Chaos test (PLAN 7.5): make providers behave as if their quota ran out.
+
+    Patches each chosen provider's complete() in this process only, so the
+    healthcheck, the fall-through, the circuit breaker and the rules fallback
+    are all exercised exactly as in a real outage.
+    """
+    chosen = {n.strip() for n in names.split(",") if n.strip()}
+
+    def dead(*_a, **_k):
+        raise QuotaExhausted(3600, "simulated outage (--simulate-outage)")
+
+    for p in providers:
+        if "all" in chosen or p.name in chosen:
+            p.complete = dead            # type: ignore[method-assign]
+            print(f"  [{p.name}] simulated outage")
+
+
+def rules_rows(jobs: list[dict], min_years_by: dict[int, float | None],
+               calibration: Calibration) -> list[dict]:
+    return [score_job(j, calibration, min_years_by.get(j["id"])) for j in jobs]
 from score import healthcheck                    # noqa: E402
 from score.prefilter import prefilter            # noqa: E402
 from score.store import ScoreStore               # noqa: E402
@@ -136,6 +161,10 @@ def main() -> int:
                     help="override description_char_limit; the system prompt is "
                          "~2,600 tokens, so on an 8k/min model this is the only "
                          "lever left once batch size is already 1")
+    ap.add_argument("--simulate-outage", metavar="NAMES",
+                    help="chaos test (PLAN 7.5): comma-separated providers, or "
+                         "'all', that act as if their quota were exhausted. The "
+                         "run must still finish, falling back to the rules scorer")
     args = ap.parse_args()
 
     settings = load_settings()
@@ -155,34 +184,63 @@ def main() -> int:
     if max_age:
         print(f"age gate: skipping postings older than {max_age:g} days")
     store = ScoreStore()
+    try:
+        return _main(args, store, max_years, penalties, max_age)
+    finally:
+        # The ledger is written whatever happened, including a crash: a
+        # failing provider is exactly what it exists to record.
+        # Never from a chaos run: simulated quota failures would write real
+        # cooldowns, and the next genuine run would skip every provider.
+        if USAGE and not args.report and not args.simulate_outage:
+            store.record_usage(USAGE)
 
+
+def _main(args, store, max_years, penalties, max_age) -> int:
     providers = default_providers()
     if args.provider:
         providers = [p for p in providers if p.name == args.provider]
+    if args.simulate_outage:
+        simulate_outage(providers, args.simulate_outage)
     configured = [p for p in providers if p.available()]
+
+    # Circuit breaker carried across runs (db/migrations/0014): a provider that
+    # exhausted its quota earlier is not called again until its cooldown ends.
+    tripped: set[str] = set()
+    if not args.report and not args.prefilter_only:
+        for name, until in store.cooldowns().items():
+            tripped.add(name)
+            print(f"  [{name}] circuit open until {until[:16]} (provider ledger)")
+
+    # With no working LLM the run still finishes: survivors get a provisional
+    # rules score (score/rules.py) instead of the old exit code 2, which in the
+    # workflow also skipped Notify -- an outage silenced every ping.
+    rules_only = False
     if not args.prefilter_only and not args.report:
         # Ping every provider before committing to a run. A dead key or an
         # unpaid account makes a three-deep chain one-deep, and finding that
         # out after the lead provider hits its cap wastes the whole window.
         try:
             results = healthcheck.run(providers, fail_fast=True)
+            healthy = {h.name for h in results if h.live}
         except RuntimeError as exc:
             log.error("%s", exc)
             print(f"\n{exc}", file=sys.stderr)
-            return 2
-        healthy = {h.name for h in results if h.live}
-        configured = [p for p in configured if p.name in healthy]
+            healthy = set()
+        configured = [p for p in configured if p.name in healthy and p.name not in tripped]
+        if not configured:
+            rules_only = True
+            print("\nNO LLM AVAILABLE — scoring with the rules fallback; every "
+                  "score this run is provisional and will be redone by the next "
+                  "run that has a working provider.")
     else:
         print("providers: " + ", ".join(
             f"{p.name}({'ready' if p.available() else 'off'})" for p in providers))
-    if not configured and not args.prefilter_only and not args.report:
-        return 2
 
     # Batch size and char limit follow the first ready provider unless overridden;
     # a fallback with a tighter ceiling re-chunks inside score_batch.
-    lead = configured[0] if configured else providers[0]
-    batch_size = args.batch_size or lead.cfg.batch_size
-    char_limit = args.char_limit or lead.cfg.max_chars
+    lead = configured[0] if configured else (providers[0] if providers else None)
+    batch_size = args.batch_size or (lead.cfg.batch_size if lead else 10)
+    char_limit = args.char_limit or (lead.cfg.max_chars if lead else 6000)
 
     # Jobs that already carry a real verdict. A scoring_failed row is a
     # transport error, not a judgement, and must never overwrite one of these:
@@ -228,10 +286,15 @@ def main() -> int:
     else:
         jobs = store.open_jobs(only_unscored=not args.rescore)
         print(f"{len(jobs)} open job(s) to consider\n")
-    if not jobs:
+    # No early return when nothing new arrived: the recovery step below
+    # (provisional and scoring_failed jobs) must run on quiet runs too, or a
+    # stranded job waits for unrelated postings to show up. Found by the
+    # end-to-end outage test on 2026-10-15.
+    if not jobs and args.retry_failed:
         return 0
 
     survivors: list[dict] = []
+    min_years_by: dict[int, float | None] = {}
     rejects: list[dict] = []
     reasons: Counter[str] = Counter()
 
@@ -257,6 +320,7 @@ def main() -> int:
         )
         if result.passed:
             survivors.append(job)
+            min_years_by[job["id"]] = result.min_years
         elif job["id"] in already_llm_scored:
             # Leave the stored score untouched. The job is excluded from this
             # run rather than downgraded, so the new rule governs what gets
@@ -281,44 +345,94 @@ def main() -> int:
 
     if args.prefilter_only:
         return 0
+
+    # Recovery without a manual flag (PLAN 7.4). Jobs scored provisionally by
+    # the rules fallback, and jobs left scoring_failed by an older run, re-enter
+    # scoring here. They passed the prefilter when first seen, so they skip it
+    # now -- otherwise the age gate would turn a provisional score into an age
+    # reject and drop a live job from the queue. With no LLM this run, only the
+    # failed ones are taken (a provisional score redone by rules is the same).
+    if not args.retry_failed and not args.rescore:
+        provisional = store.provisional_job_ids()
+        failed = {s["job_id"] for s in store.scores()
+                  if (s.get("reject_reason") or "").startswith("scoring_failed")}
+        again = failed if rules_only else (provisional | failed)
+        have = {j["id"] for j in survivors}
+        if again - have:
+            retry = [j for j in store.open_jobs(only_unscored=False)
+                     if j["id"] in again and j["id"] not in have]
+            if retry:
+                print(f"re-scoring {len(retry)} job(s) left provisional or failed "
+                      f"by an earlier run")
+                survivors.extend(retry)
+
     if args.limit:
         survivors = survivors[: args.limit]
 
-    system = build_system_prompt()
-    print(f"\nscoring {len(survivors)} job(s), batches of {batch_size}, "
-          f"lead provider {lead.name} ({lead.cfg.model})...")
-    by_id_all = {j["id"]: j for j in survivors}
+    calibration: Calibration | None = None
 
+    def provisional_scores(jobs_: list[dict]) -> list[dict]:
+        nonlocal calibration
+        if calibration is None:
+            calibration = Calibration.from_history(store.llm_history())
+        return rules_rows(jobs_, min_years_by, calibration)
+
+    by_id_all = {j["id"]: j for j in survivors}
     scored_rows: list[dict] = []
-    for i in range(0, len(survivors), batch_size):
-        batch = survivors[i: i + batch_size]
+
+    if rules_only and survivors:
+        rows = persist(provisional_scores(survivors))
+        scored_rows.extend(rows)
+        print(f"  {len(rows)} job(s) scored provisionally by rules")
+        if args.simulate_outage:
+            print("  (simulated outage: no alert sent)")
+        else:
+            try:
+                from notify.alerts import alert_providers_exhausted
+                alert_providers_exhausted("no LLM provider available at the start of the run; "
+                                          "jobs scored provisionally by rules", 0)
+            except Exception as alert_exc:
+                log.error("could not send exhaustion alert: %s", alert_exc)
+        survivors_to_llm: list[dict] = []
+    else:
+        survivors_to_llm = survivors
+
+    system = build_system_prompt() if survivors_to_llm else ""
+    if survivors_to_llm:
+        print(f"\nscoring {len(survivors_to_llm)} job(s), batches of {batch_size}, "
+              f"lead provider {lead.name} ({lead.cfg.model})...")
+
+    for i in range(0, len(survivors_to_llm), batch_size):
+        batch = survivors_to_llm[i: i + batch_size]
         started = time.monotonic()
         try:
-            rows = score_batch(batch, providers, system=system)
+            rows = score_batch(batch, providers, system=system, tripped=tripped)
             for row in rows:
                 band = (by_id_all.get(row["job_id"], {}).get("companies")
                         or {}).get("headcount_band")
                 apply_headcount_penalty(row, band, penalties)
         except AllProvidersExhausted as exc:
-            stranded = survivors[i:]
+            stranded = survivors_to_llm[i:]
             log.error("ALL PROVIDERS EXHAUSTED after %d of %d job(s): %s",
-                      i, len(survivors), exc)
+                      i, len(survivors_to_llm), exc)
             print("\nERROR: every configured provider refused.")
             print(f"  {exc}")
-            # Marked, not left silent. An unmarked job is indistinguishable
-            # from one that was never ingested, and the dashboard banner counts
-            # these so the failure is visible rather than looking like a quiet
-            # week. `--retry-failed` is the recovery path.
-            persist([{"job_id": j["id"], "fit_score": None, "verdict": "reject",
-                      "reject_reason": "scoring_failed:providers_exhausted",
-                      "model": "", "provider": ""} for j in stranded])
-            print(f"  {len(stranded)} job(s) marked scoring_failed — recover "
-                  f"with: python -m score.run --retry-failed")
-            try:
-                from notify.alerts import alert_providers_exhausted
-                alert_providers_exhausted(str(exc)[:400], len(stranded))
-            except Exception as alert_exc:
-                log.error("could not send exhaustion alert: %s", alert_exc)
+            # Not left out of the queue: the rest of the run is scored by the
+            # rules fallback, marked provisional, and re-scored automatically
+            # by the next run with a working provider. (This used to mark them
+            # scoring_failed, which no ordinary run ever retried.)
+            rows = persist(provisional_scores(stranded))
+            scored_rows.extend(rows)
+            print(f"  {len(stranded)} job(s) scored provisionally by rules; the "
+                  f"next run with a working provider redoes them")
+            if args.simulate_outage:
+                print("  (simulated outage: no alert sent)")
+            else:
+                try:
+                    from notify.alerts import alert_providers_exhausted
+                    alert_providers_exhausted(str(exc)[:400], len(stranded))
+                except Exception as alert_exc:
+                    log.error("could not send exhaustion alert: %s", alert_exc)
             break
         except ScoringError as exc:
             print(f"  batch {i // batch_size + 1}: {exc}")
@@ -328,7 +442,7 @@ def main() -> int:
         ok = sum(1 for r in rows if r.get("fit_score") is not None)
         print(f"  batch {i // batch_size + 1}: {ok}/{len(batch)} scored "
               f"in {time.monotonic() - started:.1f}s")
-        if i + batch_size < len(survivors):
+        if i + batch_size < len(survivors_to_llm):
             time.sleep(2)     # stay well inside the free-tier rate limit
 
     by_id = {j["id"]: j for j in survivors}

@@ -49,6 +49,7 @@ type ScoreRow = {
   job_id: number;
   fit_score: number | null;
   verdict: string;
+  provisional?: boolean | null;
   min_years: number | null;
   max_years: number | null;
   matched_skills: string[] | null;
@@ -114,7 +115,7 @@ export async function getQueue(): Promise<QueueRow[]> {
     select<ScoreRow>(
       "job_scores",
       "select=job_id,fit_score,verdict,min_years,max_years,matched_skills," +
-        `gap_skills,reasoning&fit_score=gte.${THRESHOLD}`,
+        `gap_skills,reasoning,provisional&fit_score=gte.${THRESHOLD}`,
     ),
     select<Application>("applications", "select=job_id,status"),
     referralIndex(),
@@ -146,6 +147,7 @@ export async function getQueue(): Promise<QueueRow[]> {
       first_seen_at: job.first_seen_at,
       fit_score: score.fit_score,
       verdict: score.verdict,
+      provisional: Boolean(score.provisional),
       min_years: score.min_years,
       max_years: score.max_years,
       matched_skills: score.matched_skills,

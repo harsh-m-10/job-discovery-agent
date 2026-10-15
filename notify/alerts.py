@@ -32,6 +32,7 @@ ALERT_KINDS = {
     "adapter_schema": -4,
     "token_expiry": -5,
     "roster_audit": -6,
+    "llm_degraded": -7,
 }
 # adapter_schema runs on a daily canary, so a 20h cooldown lets each day's run
 # speak once without re-alerting if the canary is also triggered by hand.
@@ -41,7 +42,10 @@ COOLDOWN_HOURS = {"ingest_errors": 6, "pipeline_dry": 24,
                   # is enough for a two-week warning and still prompt for a 401.
                   "token_expiry": 20,
                   # Daily audit; the same finding needs saying once a day at most.
-                  "roster_audit": 20}
+                  "roster_audit": 20,
+                  # The watchdog runs every pipeline run; twice a day is enough
+                  # to say "still on the fallback" without becoming noise.
+                  "llm_degraded": 12}
 DRY_THRESHOLD_HOURS = 72
 
 
@@ -131,17 +135,22 @@ def alert_ingest_errors(errors: list[dict], deactivated: list[str]) -> None:
 
 
 def alert_providers_exhausted(detail: str, unscored: int) -> None:
+    """Sent when no LLM could score. Since Phase 7 nothing is lost meanwhile:
+    jobs get a provisional rules score, flow to the queue and pings tagged as
+    such, and are re-scored automatically once a provider works again."""
+    stranded = (f"{unscored} job(s) this run were scored provisionally by rules "
+                if unscored else "This run's jobs were scored provisionally by rules ")
     send_alert(
         "providers_exhausted",
-        "every LLM provider refused — scoring has stopped",
-        "No configured LLM provider could score anything.\n\n"
+        "no LLM provider available — scoring provisionally",
+        "No configured LLM provider could score.\n\n"
         f"  {detail}\n\n"
-        f"{unscored} job(s) are marked scoring_failed and are invisible to the "
-        f"queue until retried.\n\n"
-        "Recover with:\n"
-        "  python -m score.run --retry-failed\n\n"
-        "Check provider health with:\n"
-        "  python -m score.healthcheck\n",
+        f"{stranded}(score/rules.py): they still reach the queue and pings, "
+        f"marked provisional, and the next run with a working provider "
+        f"re-scores them. Nothing needs recovering by hand.\n\n"
+        "If this persists, check provider health and quotas:\n"
+        "  python -m score.healthcheck\n"
+        "and the provider ledger (table provider_usage) for cooldowns.\n",
     )
 
 

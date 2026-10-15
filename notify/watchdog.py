@@ -66,6 +66,51 @@ def deactivated_boards() -> list[str]:
     return [r["name"] for r in rows]
 
 
+RULES_SHARE_LIMIT = 0.30        # PLAN 7.6
+LLM_SILENCE = timedelta(hours=2)
+
+
+def llm_health(now: datetime | None = None) -> list[str]:
+    """PLAN 7.6: is scoring quietly running on the rules fallback?
+
+    Two findings. (1) Work is being scored by rules -- so there were jobs to
+    score -- yet no LLM has succeeded for LLM_SILENCE: an outage, not a quiet
+    spell. (2) The rules fallback produced over RULES_SHARE_LIMIT of today's
+    scores: the queue is mostly guesses. Both read only what scoring recorded
+    (job_scores.provider, provider_usage); neither makes an LLM call.
+    """
+    now = now or datetime.now(timezone.utc)
+    base, headers = db()
+    day = now.date().isoformat()
+    findings: list[str] = []
+    try:
+        today = requests.get(
+            f"{base}/job_scores?select=provider,scored_at&fit_score=not.is.null"
+            f"&scored_at=gte.{day}T00:00:00Z", headers=headers, timeout=30).json()
+        usage = requests.get(f"{base}/provider_usage?select=provider,last_success_at",
+                             headers=headers, timeout=30).json()
+    except Exception as exc:
+        return [f"could not read scoring health ({type(exc).__name__})"]
+    if not isinstance(today, list) or not isinstance(usage, list):
+        return []                       # tables predate 0014
+    rules = [r for r in today if r.get("provider") == "rules"]
+    cutoff = now - LLM_SILENCE
+    recent_rules = [r for r in rules
+                    if datetime.fromisoformat(r["scored_at"].replace("Z", "+00:00")) >= cutoff]
+    successes = [datetime.fromisoformat(u["last_success_at"].replace("Z", "+00:00"))
+                 for u in usage if u.get("last_success_at")]
+    last_llm = max(successes) if successes else None
+    if recent_rules and (last_llm is None or last_llm < cutoff):
+        since = f"since {last_llm:%Y-%m-%d %H:%M} UTC" if last_llm else "in the ledger at all"
+        findings.append(f"no LLM provider has scored {since}, and {len(recent_rules)} "
+                        f"job(s) in the last 2h were scored provisionally by rules")
+    if today and len(rules) / len(today) > RULES_SHARE_LIMIT:
+        findings.append(f"{len(rules)} of {len(today)} scores today "
+                        f"({len(rules) / len(today):.0%}) came from the rules fallback "
+                        f"(limit {RULES_SHARE_LIMIT:.0%})")
+    return findings
+
+
 def stranded_jobs() -> int:
     base, headers = db()
     rows = requests.get(
@@ -142,6 +187,21 @@ def main() -> int:
         resp.raise_for_status()
         if not resp.json():
             findings.append("no new postings in 72h")
+
+    # Scoring health (PLAN 7.6): an outage the rules fallback is covering for
+    # looks healthy everywhere else, because jobs keep flowing.
+    llm_findings = llm_health()
+    for f in llm_findings:
+        print(f"scoring: {f}")
+    if llm_findings:
+        findings.extend(llm_findings)
+        if not args.dry_run:
+            send_alert("llm_degraded", "scoring is running on the rules fallback",
+                       "\n".join(llm_findings) + "\n\n"
+                       "Jobs still reach the queue and pings, marked provisional, and are "
+                       "re-scored automatically once a provider works. If this persists:\n"
+                       "  python -m score.healthcheck --deep\n"
+                       "and check provider_usage for cooldowns and last errors.\n")
 
     # Dispatch token (Phase 2.6). Both external triggers share it, so its
     # expiry is a single point of failure for the whole trigger plane.

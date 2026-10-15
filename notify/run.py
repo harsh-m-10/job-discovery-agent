@@ -245,7 +245,7 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     headers = db_headers()
     scores = get_all(
         f"job_scores?select=job_id,fit_score,min_years,max_years,"
-        f"matched_skills,gap_skills,reasoning&fit_score=gte.{threshold}",
+        f"matched_skills,gap_skills,reasoning,provisional&fit_score=gte.{threshold}",
         headers)
     if not scores:
         return []
@@ -293,6 +293,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
             "role_family": job.get("role_family"),
             "resume_variant": variants.get(job.get("role_family") or ""),
             "fit_score": score.get("fit_score"),
+            # Phase 3.2/7.4: a rules score is a guess; the ping says so.
+            "provisional": bool(score.get("provisional")),
             "min_years": score.get("min_years"),
             "max_years": score.get("max_years"),
             "matched_skills": score.get("matched_skills") or [],

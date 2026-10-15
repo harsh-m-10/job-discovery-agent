@@ -38,6 +38,7 @@ export default async function QueuePage({
         ? formatDayAge(ageHours) : formatAge(ageHours),
       datedFromSighting: !row.posted_at,
       datedToDay: row.posted_at_precision === "date",
+      provisional: row.provisional,
       referrals: row.referrals,
     };
   });

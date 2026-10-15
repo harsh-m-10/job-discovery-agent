@@ -22,6 +22,7 @@ export type CardJob = {
   ageLabel: string;
   datedFromSighting: boolean;
   datedToDay: boolean;
+  provisional: boolean;
   referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean }[];
 };
 
@@ -134,6 +135,11 @@ export default function JobCard({
             {job.datedFromSighting && (
               <span className="dot" title="The ATS gave no posting date; age is measured from first sighting">
                 approx
+              </span>
+            )}
+            {job.provisional && (
+              <span className="dot" title="No LLM was available when this was scored; the score is the rules fallback's estimate and will be replaced by the next run with a working provider">
+                provisional score
               </span>
             )}
             {job.datedToDay && (

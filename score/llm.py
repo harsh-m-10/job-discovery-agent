@@ -25,9 +25,62 @@ from pathlib import Path
 
 import yaml
 
+from datetime import datetime, timedelta, timezone
+
 from .providers import (ChatProvider, NotConfigured, PaymentRequired,
                         ProviderError, QuotaExhausted, RateLimited,
                         RequestTooLarge, ServerError, build_providers)
+
+# --- usage ledger and circuit breaker (docs/PLAN.md 7.1, 7.2) ---------------
+#
+# USAGE accumulates per-provider counts for this process; score/run.py writes
+# them to provider_usage at the end of the run. A provider whose quota is
+# exhausted, or that has no free quota at all, gets a cooldown: score_batch
+# stops calling it for the rest of the run, and the next runs read the
+# cooldown back from the ledger. Before this, a dead provider was retried with
+# backoff on every batch of every run.
+
+QUOTA_COOLDOWN = timedelta(hours=1)        # floor; the vendor's hint wins if longer
+PAYMENT_COOLDOWN = timedelta(hours=24)
+
+USAGE: dict[str, dict] = {}
+
+
+def usage(name: str) -> dict:
+    return USAGE.setdefault(name, {
+        "requests": 0, "successes": 0, "rate_limited": 0, "quota_exhausted": 0,
+        "errors": 0, "jobs_scored": 0, "last_success_at": None, "last_error": None,
+        "cooldown_until": None})
+
+
+def _call(provider: ChatProvider, system: str, user: str, max_output: int) -> str:
+    """provider.complete, counted. Re-raises everything."""
+    u = usage(provider.name)
+    u["requests"] += 1
+    now = datetime.now(timezone.utc)
+    try:
+        raw = provider.complete(system, user, max_output)
+    except QuotaExhausted as exc:
+        u["quota_exhausted"] += 1
+        u["last_error"] = f"quota exhausted: {str(exc)[:200]}"
+        u["cooldown_until"] = now + max(QUOTA_COOLDOWN, timedelta(seconds=exc.retry_after or 0))
+        raise
+    except PaymentRequired as exc:
+        u["errors"] += 1
+        u["last_error"] = f"payment required: {str(exc)[:200]}"
+        u["cooldown_until"] = now + PAYMENT_COOLDOWN
+        raise
+    except RateLimited as exc:
+        u["rate_limited"] += 1
+        u["last_error"] = f"rate limited: {str(exc)[:200]}"
+        raise
+    except Exception as exc:
+        u["errors"] += 1
+        u["last_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+        raise
+    u["successes"] += 1
+    u["last_success_at"] = now
+    return raw
 
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT_FILE = ROOT / "score" / "prompts" / "scoring.txt"
@@ -254,7 +307,7 @@ def _attempt(provider: ChatProvider, jobs: list[dict], system: str,
 
     for attempt in range(attempts):
         try:
-            raw = provider.complete(system, user, max_output)
+            raw = _call(provider, system, user, max_output)
             entries = parse_scores(raw)
         except RequestTooLarge as exc:
             if len(jobs) > 1:
@@ -301,13 +354,16 @@ def _attempt(provider: ChatProvider, jobs: list[dict], system: str,
             rows.append({"job_id": job_id, "fit_score": None, "verdict": "reject",
                          "reject_reason": "scoring_failed:omitted_by_model",
                          "model": provider.cfg.model, "provider": provider.name})
+        usage(provider.name)["jobs_scored"] += sum(
+            1 for r in rows if r.get("fit_score") is not None)
         return rows
 
     raise ProviderError(f"{provider.name}: {last_error}")
 
 
 def score_batch(jobs: list[dict], providers: list[ChatProvider], *,
-                system: str | None = None) -> list[dict]:
+                system: str | None = None,
+                tripped: set[str] | None = None) -> list[dict]:
     """Score one batch, falling through providers until one succeeds.
 
     Batch size and character limit are per-provider, so a fallback with a
@@ -322,20 +378,35 @@ def score_batch(jobs: list[dict], providers: list[ChatProvider], *,
             "no provider has an API key set — expected one of: "
             + ", ".join(p.cfg.api_key_env for p in providers)
         )
+    # `tripped` is the run's circuit breaker: providers that already proved
+    # unusable are not called again for later batches.
+    tripped = tripped if tripped is not None else set()
 
     failures: list[str] = []
     for provider in usable:
+        if provider.name in tripped:
+            failures.append(f"{provider.name}: circuit open")
+            continue
         try:
             return _attempt(provider, jobs, system, provider.cfg.max_chars)
         except QuotaExhausted as exc:
+            tripped.add(provider.name)
             failures.append(f"{provider.name}: quota exhausted")
-            print(f"    [{provider.name}] quota exhausted — falling through")
+            print(f"    [{provider.name}] quota exhausted — circuit opened, falling through")
             continue
         except PaymentRequired as exc:
+            tripped.add(provider.name)
             failures.append(f"{provider.name}: payment required (no free quota)")
-            print(f"    [{provider.name}] 402 payment required — falling through")
+            print(f"    [{provider.name}] 402 payment required — circuit opened, falling through")
             continue
-        except (RateLimited, RequestTooLarge, NotConfigured, ProviderError) as exc:
+        except RateLimited as exc:
+            # Still limited after _attempt's own backoff: waiting again on the
+            # next batch only burns the run. Skip it for the rest of this run.
+            tripped.add(provider.name)
+            failures.append(f"{provider.name}: rate limited after retries")
+            print(f"    [{provider.name}] still rate limited — circuit opened, falling through")
+            continue
+        except (RequestTooLarge, NotConfigured, ProviderError) as exc:
             failures.append(f"{provider.name}: {str(exc)[:90]}")
             print(f"    [{provider.name}] failed ({str(exc)[:70]}) — falling through")
             continue
