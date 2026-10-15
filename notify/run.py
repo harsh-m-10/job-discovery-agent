@@ -45,7 +45,37 @@ sys.path.insert(0, str(ROOT))
 load_dotenv(ROOT / ".env")
 
 from notify import email as email_channel   # noqa: E402
+from notify import telegram                 # noqa: E402
 from notify import whatsapp                 # noqa: E402
+
+# Instant channels in order of preference. A job goes to the first configured
+# one; anything it does not take (failure, or over the daily cap) goes into the
+# email digest, so no job is ever dropped for want of a channel.
+INSTANT_CHANNELS = (("telegram", telegram), ("whatsapp", whatsapp))
+
+
+def instant_channel():
+    """-> (name, module) for the first configured instant channel, or None."""
+    for name, module in INSTANT_CHANNELS:
+        if module.configured():
+            return name, module
+    return None
+
+
+def pings_sent_today(channels: tuple[str, ...]) -> int:
+    """Successful instant pings since 00:00 IST, for max_pings_per_day.
+
+    The day boundary is the operator's (India), not UTC's: a cap that reset at
+    05:30 local would split one working morning across two budgets.
+    """
+    from datetime import timedelta
+    ist = timezone(timedelta(hours=5, minutes=30))
+    midnight = datetime.now(ist).replace(hour=0, minute=0, second=0, microsecond=0)
+    since = midnight.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = get_all(
+        f"notifications?select=id&ok=is.true&sent_at=gte.{since}"
+        f"&channel=in.({','.join(channels)})", db_headers())
+    return len(rows)
 
 SETTINGS = ROOT / "config" / "settings.yaml"
 
@@ -258,8 +288,10 @@ def digest(entries: list[tuple[dict, str]], threshold: float,
         lines.append("")
 
     reasons = sorted({reason for _, reason in entries})
+    # (Neutral wording: since Phase 3 the instant channel may be Telegram,
+    # WhatsApp, or neither.)
     lines.append("=" * 58)
-    lines.append("Delivered by email rather than WhatsApp: "
+    lines.append("Delivered by email rather than as an instant ping: "
                  + ("; ".join(reasons) if reasons else "unknown"))
     if dashboard:
         lines.append(f"Dashboard: {dashboard.rstrip('/')}")
@@ -301,21 +333,23 @@ def main() -> int:
         return 0
 
     if args.dry_run:
-        if whatsapp.configured():
+        channel = instant_channel()
+        if channel:
+            name, module = channel
             for job in jobs:
                 print("-" * 50)
-                print(whatsapp.format_message(job, dashboard))
+                print(module.format_message(job, dashboard))
             print("-" * 50)
         else:
             # Render exactly what would be sent, digest and all, rather than a
             # per-job preview of a mail that will never be sent that way.
             subject, body = digest(
-                [(job, "whatsapp not configured") for job in jobs],
+                [(job, "no instant channel configured") for job in jobs],
                 threshold, dashboard)
             print(f"Subject: {subject}\n")
             print(body)
-        print(f"\ndry run — nothing sent. whatsapp configured: "
-              f"{whatsapp.configured()}, email transport: "
+        print(f"\ndry run — nothing sent. instant channel: "
+              f"{channel[0] if channel else 'none'}, email transport: "
               f"{email_channel.transport() or 'none'}")
         return 0
 
@@ -325,32 +359,45 @@ def main() -> int:
     # to email rather than logging a failure per job. A configured-but-broken
     # CallMeBot still falls through per job, which is the case that needs the
     # per-job record.
-    whatsapp_ready = whatsapp.configured()
-    if not whatsapp_ready:
-        print("whatsapp not configured — delivering by email\n")
+    channel = instant_channel()
+    if channel is None:
+        print("no instant channel configured — delivering by email\n")
+
+    # max_pings_per_day (Phase 3.1; the key existed and nothing read it). Jobs
+    # over the cap are not dropped: they go to the digest like any other job
+    # the instant channel did not take. Highest scores go first, because
+    # `jobs` arrives sorted by descending fit.
+    cap = int(settings.get("max_pings_per_day", 0) or 0)
+    budget = None
+    if channel and cap > 0:
+        budget = max(0, cap - pings_sent_today(tuple(n for n, _ in INSTANT_CHANNELS)))
+        print(f"{channel[0]}: {budget} of {cap} pings left today (IST)\n")
 
     sent = failed = 0
-    # Jobs that still need email, paired with why WhatsApp did not take them.
-    # They are collected rather than sent inline so that one run produces one
-    # email: at 92 boards a backlog run is 61 jobs, and 61 separate mails is
-    # not a usable inbox. WhatsApp stays per-job — it is a phone ping, and
-    # CallMeBot truncates long bodies.
+    # Jobs that still need email, paired with why the instant channel did not
+    # take them. Collected rather than sent inline so one run produces one
+    # email: a backlog run can be 61 jobs, and 61 mails is not a usable inbox.
     for_email: list[tuple[dict, str]] = []
 
     for job in jobs:
-        if whatsapp_ready:
-            try:
-                whatsapp.send(whatsapp.format_message(job, dashboard))
-                record(job["job_id"], "whatsapp", True, None)
-                sent += 1
-                print(f"  sent    {job['fit_score']} {job['title'][:48]}")
-                continue
-            except Exception as exc:
-                record(job["job_id"], "whatsapp", False, str(exc))
-                print(f"  FAILED  {job['title'][:48]}: {str(exc)[:90]}")
-                for_email.append((job, str(exc)))
-        else:
-            for_email.append((job, "whatsapp not configured"))
+        if channel is None:
+            for_email.append((job, "no instant channel configured"))
+            continue
+        name, module = channel
+        if budget is not None and budget <= 0:
+            for_email.append((job, f"daily ping cap ({cap}) reached"))
+            continue
+        try:
+            module.send(module.format_message(job, dashboard))
+            record(job["job_id"], name, True, None)
+            sent += 1
+            if budget is not None:
+                budget -= 1
+            print(f"  {name:<8} {job['fit_score']} {job['title'][:48]}")
+        except Exception as exc:
+            record(job["job_id"], name, False, str(exc))
+            print(f"  FAILED  {job['title'][:48]}: {str(exc)[:90]}")
+            for_email.append((job, f"{name}: {exc}"))
 
     # One digest for everything WhatsApp did not deliver. Dedupe is still keyed
     # per job, so every job in the digest gets its own notifications row — a
