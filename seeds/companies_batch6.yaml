@@ -1,0 +1,23 @@
+# seeds/companies_batch6.yaml — first boards on a new ATS (SmartRecruiters).
+#
+# Added 2026-10-15 with ingest/adapters/smartrecruiters.py. Each identifier was
+# probed live: board answers, India postings counted server-side (country=in),
+# and a sample posting opened to confirm the employer.
+#
+# PRIORITY deviates from the volume rule (1 = >=15 India roles). This adapter,
+# like Workday, makes one detail call per posting to get the description, so a
+# priority-1 board is fetched in full every 15 minutes: Bosch at priority 1
+# would be ~60,000 requests a day to one public API. Until ingest can skip
+# details for postings it already holds (docs/DECISIONS.md, known gap), boards
+# on detail-fetching adapters are capped at priority 2, and Bosch -- 626 India
+# postings, 51s per fetch -- sits at 3 (daily).
+
+- {name: Freshworks, ats: smartrecruiters, token: Freshworks, category: product, priority: 2}   # india=37; left Lever silently (lever/freshworks retired)
+- {name: ServiceNow, ats: smartrecruiters, token: ServiceNow, category: product, priority: 2}   # india=76; Hyderabad
+- {name: Experian,   ats: smartrecruiters, token: Experian,   category: gcc,     priority: 2}   # india=37; Hyderabad
+- {name: Bosch,      ats: smartrecruiters, token: BoschGroup, category: gcc,     priority: 3}   # india=626; ~250 engineering (BGSW, Bengaluru)
+
+# Probed on SmartRecruiters and rejected 2026-10-15:
+#   live board, too little India:  WesternDigital (1), Ubisoft2 (7), Canva (5)
+#   answers 200 with zero postings (not on SmartRecruiters, or a different id):
+#     Visa (Workday, already tracked), Equinix, WoltersKluwer, Sanofi, NetApp

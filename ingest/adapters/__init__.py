@@ -6,6 +6,7 @@ from ..models import ATSAdapter
 from .ashby import AshbyAdapter
 from .greenhouse import GreenhouseAdapter
 from .lever import LeverAdapter
+from .smartrecruiters import SmartRecruitersAdapter
 from .workday import WorkdayAdapter
 
 ADAPTERS: dict[str, ATSAdapter] = {
@@ -13,6 +14,7 @@ ADAPTERS: dict[str, ATSAdapter] = {
     "lever": LeverAdapter(),
     "ashby": AshbyAdapter(),
     "workday": WorkdayAdapter(),
+    "smartrecruiters": SmartRecruitersAdapter(),
 }
 
 

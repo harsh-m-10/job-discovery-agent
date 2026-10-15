@@ -37,6 +37,11 @@
   token: "sarvam"
   min_postings: 12         # 42 on 2026-10-15
 
+- ats: smartrecruiters
+  company: Freshworks
+  token: "Freshworks"
+  min_postings: 12         # 37 on 2026-10-15 (India, filtered server-side)
+
 - ats: workday
   company: Target
   token: "target|wd5|targetCareers"
