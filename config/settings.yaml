@@ -303,6 +303,20 @@ location_keywords:
   - madhya pradesh
   - uttar pradesh
 
+# Resume variant per role family (Phase 3.3). Each instant ping names the
+# variant to send, so applying from the phone does not start with "which CV?".
+# Families come from common/role.py. Fill in a link you maintain (a Drive
+# file, say); a family left empty simply gets no "Resume:" line. Several
+# families can share one link.
+resume_variants:
+  genai: ""
+  ml: ""
+  data: ""
+  backend: ""
+  platform: ""
+  fullstack: ""
+  security: ""
+
 # Run lease (Phase 2.2). From Phase 2 the pipeline has three triggers that can
 # fire close together -- the cron-job.org dispatch, the Cloudflare standby, and
 # GitHub's own schedule. ingest.run exits early when an automated run finished

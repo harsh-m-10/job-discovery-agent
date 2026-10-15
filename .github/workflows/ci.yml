@@ -75,6 +75,9 @@ jobs:
       - name: Telegram channel and ping routing tests
         run: python tests/test_telegram.py
 
+      - name: Role family classifier tests
+        run: python tests/test_role.py
+
       - name: Cloudflare standby dispatcher tests
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs

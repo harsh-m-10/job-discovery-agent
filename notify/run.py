@@ -181,6 +181,16 @@ def age_label(hours: float, date_only: bool = False) -> str:
     return f"{int(hours / 24)}d"
 
 
+def resume_variants() -> dict[str, str]:
+    """family -> link, empty links dropped (Phase 3.3)."""
+    try:
+        raw = (yaml.safe_load(SETTINGS.read_text(encoding="utf-8")) or {}).get(
+            "resume_variants") or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    return {str(k): str(v).strip() for k, v in raw.items() if str(v or "").strip()}
+
+
 def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[dict]:
     """Jobs above threshold, still open, never notified, not stale.
 
@@ -213,12 +223,13 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     ids = ",".join(str(s["job_id"]) for s in wanted)
     jobs = get_all(
         f"jobs?select=id,title,location,absolute_url,compensation,"
-        f"posted_at,posted_at_precision,first_seen_at,companies(name)"
+        f"posted_at,posted_at_precision,role_family,first_seen_at,companies(name)"
         f"&closed_at=is.null&id=in.({ids})",
         headers)
     job_by_id = {j["id"]: j for j in jobs}
 
     now = datetime.now(timezone.utc)
+    variants = resume_variants()
     out = []
     for score in wanted:
         job = job_by_id.get(score["job_id"])
@@ -239,6 +250,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
             "age_label": age_label(
                 hours, date_only=job.get("posted_at_precision") == "date"),
             "age_hours": hours,
+            "role_family": job.get("role_family"),
+            "resume_variant": variants.get(job.get("role_family") or ""),
             "fit_score": score.get("fit_score"),
             "min_years": score.get("min_years"),
             "max_years": score.get("max_years"),

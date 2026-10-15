@@ -16,6 +16,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from common.role import role_family
+
 from .models import RawJob
 from .normalize import content_hash
 
@@ -80,6 +82,9 @@ def _payload(company_id: int, job: RawJob, digest: str, reopen_count: int) -> di
         "closed_at": None,
         "reopen_count": reopen_count,
         "content_hash": digest,
+        # Classified here so SQL and the dashboard read a column instead of
+        # re-implementing common/role.py (db/migrations/0007).
+        "role_family": role_family(job.title),
         "raw": job.raw or {},
     }
 
