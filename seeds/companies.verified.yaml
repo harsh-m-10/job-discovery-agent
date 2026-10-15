@@ -566,6 +566,11 @@
   token: ServiceNow
   category: product
   priority: 2
+- name: Swiggy
+  ats: smartrecruiters
+  token: Swiggy
+  category: product
+  priority: 2
 - name: Standard Chartered
   ats: successfactors
   token: jobs.standardchartered.com|en_GB

@@ -16,6 +16,16 @@
 - {name: ServiceNow, ats: smartrecruiters, token: ServiceNow, category: product, priority: 2}   # india=76; Hyderabad
 - {name: Experian,   ats: smartrecruiters, token: Experian,   category: gcc,     priority: 2}   # india=37; Hyderabad
 - {name: Bosch,      ats: smartrecruiters, token: BoschGroup, category: gcc,     priority: 3}   # india=626; ~250 engineering (BGSW, Bengaluru)
+- {name: Swiggy,     ats: smartrecruiters, token: Swiggy,     category: product, priority: 2}   # india=195; 190/195 JDs name Swiggy. One of
+  # the India-HQ employers docs/STATE.md G2 listed as unreachable -- it was only
+  # unreachable on Greenhouse, Lever and Ashby. Mostly operations; ~7 engineering
+  # (e.g. Software Dev Engineer I, Bengaluru) on 2026-10-15.
+
+# Roster pass 2026-10-15 (PLAN 6.8) on SmartRecruiters: of Zoho, Chargebee,
+# Darwinbox, PhonePe, Swiggy, Zomato, Flipkart, Nykaa, Zerodha, Hasura,
+# Atlassian, Infosys, Societe Generale, Siemens, Oracle, Samsung, Rakuten,
+# Meesho, CRED, Groww, Razorpay, Paytm, Ola, Myntra, Dream11, InMobi, Sprinklr,
+# Postman, Chronosphere (and variants) only Swiggy is here.
 
 # Probed on SmartRecruiters and rejected 2026-10-15:
 #   live board, too little India:  WesternDigital (1), Ubisoft2 (7), Canva (5)
