@@ -62,6 +62,82 @@ def base_url() -> str:
     return os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1"
 
 
+PAGE = 1000          # PostgREST's per-response cap, whatever Range asks for
+MAX_PAGES = 50
+
+
+def get_all(path_and_query: str, headers: dict) -> list[dict]:
+    """Paged GET. Every read in this module goes through here.
+
+    PostgREST silently caps a response at 1000 rows. The dashboard was bitten
+    by exactly this on 2026-10-15 — 29 scored postings invisible because the
+    jobs lookup was truncated — and pending_jobs had the same three unpaged
+    reads. None had hit the cap yet (170 delivered pings, ~170 jobs over
+    threshold), but `ok` notification rows only ever grow, and the failure
+    mode is the worst kind: a truncated dedupe list re-pings old jobs, and a
+    truncated jobs lookup drops a job as "closed between scoring and
+    notifying" without a word.
+
+    Raises on an HTTP error. Before, an error body was a JSON object that the
+    callers then iterated as if it were rows.
+    """
+    rows: list[dict] = []
+    for page in range(MAX_PAGES):
+        offset = page * PAGE
+        resp = requests.get(
+            f"{base_url()}/{path_and_query}",
+            headers={**headers, "Range-Unit": "items",
+                     "Range": f"{offset}-{offset + PAGE - 1}"},
+            timeout=60)
+        resp.raise_for_status()
+        batch = resp.json()
+        rows.extend(batch)
+        if len(batch) < PAGE:
+            return rows
+    raise RuntimeError(
+        f"{path_and_query.split('?')[0]}: still full pages after "
+        f"{MAX_PAGES * PAGE} rows — the query is probably missing a filter")
+
+
+def prune_failures(retention_days: float) -> int | None:
+    """Delete delivery failures older than the retention window. Never raises.
+
+    Only `ok = false` rows are touched. `ok = true` rows ARE the dedupe record
+    — deleting one would re-ping its job — so the filter is fixed here rather
+    than configurable.
+
+    Measured 2026-10-15: 26,304 rows, of which 26,134 were failures, and those
+    were two error strings repeated 13,067 times each ("CALLMEBOT_PHONE and
+    CALLMEBOT_APIKEY are not set" / "no email transport configured"), every
+    one from before 2026-09-05. A failure row is worth having while someone
+    might investigate it; after a month it is only growth against the 500 MB
+    free-tier cap.
+
+    Housekeeping must never cost a ping, so any error is reported and
+    swallowed. -> rows deleted, or None if the count was unavailable.
+    """
+    from notify.alerts import _since
+
+    try:
+        resp = requests.delete(
+            f"{base_url()}/notifications?ok=is.false"
+            f"&sent_at=lt.{_since(retention_days * 24)}",
+            headers={**db_headers(), "Prefer": "return=minimal,count=exact"},
+            timeout=120)
+        resp.raise_for_status()
+    except Exception as exc:
+        print(f"  retention: could not prune failed notifications "
+              f"({type(exc).__name__}: {exc}) — not fatal, continuing")
+        return None
+    # Content-Range on a counted DELETE reads "*/<n>".
+    count = (resp.headers.get("Content-Range") or "").rpartition("/")[2]
+    deleted = int(count) if count.isdigit() else None
+    if deleted:
+        print(f"  retention: deleted {deleted} failed notification(s) older "
+              f"than {retention_days:g} days")
+    return deleted
+
+
 def age_label(hours: float) -> str:
     if hours < 1:
         return f"{max(1, int(hours * 60))}m"
@@ -83,17 +159,16 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     scorer would drop jobs in the window between being scored and being sent.
     """
     headers = db_headers()
-    scores = requests.get(
-        f"{base_url()}/job_scores?select=job_id,fit_score,min_years,max_years,"
+    scores = get_all(
+        f"job_scores?select=job_id,fit_score,min_years,max_years,"
         f"matched_skills,gap_skills,reasoning&fit_score=gte.{threshold}",
-        headers=headers, timeout=60).json()
+        headers)
     if not scores:
         return []
 
     already = {
-        row["job_id"] for row in requests.get(
-            f"{base_url()}/notifications?select=job_id&ok=is.true",
-            headers=headers, timeout=60).json()
+        row["job_id"] for row in get_all(
+            "notifications?select=job_id&ok=is.true", headers)
         if row.get("job_id") is not None
     }
     wanted = [s for s in scores if s["job_id"] not in already]
@@ -101,10 +176,10 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
         return []
 
     ids = ",".join(str(s["job_id"]) for s in wanted)
-    jobs = requests.get(
-        f"{base_url()}/jobs?select=id,title,location,absolute_url,compensation,"
+    jobs = get_all(
+        f"jobs?select=id,title,location,absolute_url,compensation,"
         f"posted_at,first_seen_at,companies(name)&closed_at=is.null&id=in.({ids})",
-        headers=headers, timeout=60).json()
+        headers)
     job_by_id = {j["id"]: j for j in jobs}
 
     now = datetime.now(timezone.utc)
@@ -205,6 +280,12 @@ def main() -> int:
         settings.get("max_display_age_days")
         or settings.get("max_age_days", 0) or 0
     ) or None
+    # Before the early return below, so housekeeping happens on quiet runs
+    # too, and never on a dry run, which promises to record nothing.
+    if not args.dry_run:
+        prune_failures(float(
+            settings.get("notification_failure_retention_days", 30)))
+
     jobs = pending_jobs(threshold, max_age)
     age_note = f", posted within {max_age:g} days" if max_age else ""
     print(f"{len(jobs)} job(s) at or above {threshold}{age_note} "

@@ -293,6 +293,11 @@ location_keywords:
   - madhya pradesh
   - uttar pradesh
 
+# notify/run.py deletes `notifications` rows with ok = false older than this
+# on every run. Rows with ok = true are never deleted: they are the per-job
+# dedupe record, and removing one would re-ping its job.
+notification_failure_retention_days: 30
+
 # Board health
 max_consecutive_failures: 5
 fetch_timeout_seconds: 20

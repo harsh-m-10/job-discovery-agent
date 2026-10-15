@@ -63,6 +63,12 @@ jobs:
       - name: India location gate tests
         run: python tests/test_geo.py
 
+      - name: Notify paging and retention tests
+        run: python tests/test_retention.py
+
+      - name: Digest rendering tests
+        run: python tests/test_digest.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 
