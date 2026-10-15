@@ -91,12 +91,20 @@ def test_the_ntfy_payload_is_json_with_click_and_apply():
     assert low["priority"] == 3 and low["click"] == "https://x.invalid/7"
 
 
+def test_the_run_email_leads_with_the_best_score_and_counts_the_rest():
+    assert instant.batch_subject([job(1, 9.1), job(2, 7.0), job(3, 6.8)]) == \
+        "[JOB 9.1] Engineer 1 - Acme (Bengaluru) (+2 more)"
+    assert instant.batch_subject([job(1, 8.0)]) == "[JOB 8.0] Engineer 1 - Acme (Bengaluru)"
+    body = instant.batch_body([job(1, 9.1), job(2, 7.0)])
+    assert body.index("[1/2] 9.1") < body.index("[2/2] 7.0")
+
+
 def test_the_match_email_comes_from_resend_not_gmail_when_keyed():
     sent = {}
     real = email_mod.send
     email_mod.send = lambda subject, body, **kw: sent.update(kw, subject=subject) or kw["transport"]
     try:
-        via = with_env(ALL, lambda: instant.send_email(job(1)))
+        via = with_env(ALL, lambda: instant.send_email([job(1)]))
     finally:
         email_mod.send = real
     assert via == "resend" and sent["sender"] == instant.MATCH_EMAIL_FROM
@@ -107,7 +115,7 @@ def test_without_resend_the_match_email_still_goes_by_smtp():
     real = email_mod.send
     email_mod.send = lambda subject, body, **kw: kw["transport"]
     try:
-        via = with_env({**ALL, "RESEND_API_KEY": None}, lambda: instant.send_email(job(1)))
+        via = with_env({**ALL, "RESEND_API_KEY": None}, lambda: instant.send_email([job(1)]))
     finally:
         email_mod.send = real
     assert via == "smtp"
@@ -137,10 +145,10 @@ def run_main(jobs, *, env=None, sent_today=0, cap=40, ntfy_fails=False, email_fa
             raise RuntimeError("ntfy 502: bad gateway")
         pushes.append(payload)
 
-    def fake_email(j, dashboard=""):
+    def fake_email(js, dashboard=""):
         if email_fails:
             raise RuntimeError("resend 403")
-        mails.append(j["job_id"])
+        mails.append([j["job_id"] for j in js])
         return "resend"
 
     try:
@@ -164,22 +172,22 @@ def run_main(jobs, *, env=None, sent_today=0, cap=40, ntfy_fails=False, email_fa
     return records, digests, pushes, mails
 
 
-def test_every_job_gets_a_push_and_an_email():
-    records, digests, pushes, mails = run_main([job(1), job(2)])
-    assert len(pushes) == 2 and mails == [1, 2] and not digests
+def test_every_job_gets_a_push_and_the_run_gets_one_email():
+    records, digests, pushes, mails = run_main([job(1, 9.0), job(2)])
+    assert len(pushes) == 2 and mails == [[1, 2]] and not digests
     assert {(j, c) for j, c, ok in records if ok} == {
         (1, "ntfy"), (1, "email-instant"), (2, "ntfy"), (2, "email-instant")}
 
 
 def test_one_channel_failing_still_counts_as_delivered():
     records, digests, pushes, mails = run_main([job(1)], ntfy_fails=True)
-    assert mails == [1] and not digests
+    assert mails == [[1]] and not digests
     assert (1, "ntfy", False) in records and (1, "email-instant", True) in records
 
 
 def test_both_failing_falls_back_to_the_digest_in_the_same_run():
     records, digests, _, _ = run_main([job(1)], ntfy_fails=True, email_fails=True)
-    assert len(digests) == 1 and "ntfy: ntfy 502" in digests[0]
+    assert len(digests) == 1 and "ntfy: ntfy 502" in digests[0] and "resend 403" in digests[0]
     assert (1, "email", True) in records
 
 

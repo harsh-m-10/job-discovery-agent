@@ -1,7 +1,8 @@
-"""The instant channels: one ntfy push and one email per match (decided 2026-10-15).
+"""The instant channels: an ntfy push per match, one email per run.
 
-Two channels, both sent for every job, because each covers the other's way of
-failing. ntfy.sh is a free push service with no account: the phone app
+Decided 2026-10-15, revised 2026-10-16: the push is per job (the phone alert),
+the email consolidates every match a run found (one mail per run, not one per
+job). Both cover each other's way of failing. ntfy.sh is a free push service with no account: the phone app
 subscribes to a long random topic (NTFY_TOPIC), which is the only secret --
 anyone who knows it can read and post. The email is the record you can search
 and forward, and it comes from an address that is NOT the operator's own
@@ -124,13 +125,27 @@ def email_transport() -> str | None:
     return email_channel.transport()
 
 
-def send_email(job: dict, dashboard_url: str = "") -> str:
-    """-> transport used. Raises on failure."""
+def batch_subject(jobs: list[dict]) -> str:
+    """The best job's subject, so "[JOB 8.4]" still leads, plus the count."""
+    top = subject(jobs[0])
+    return top if len(jobs) == 1 else f"{top} (+{len(jobs) - 1} more)"
+
+
+def batch_body(jobs: list[dict], dashboard_url: str = "") -> str:
+    blocks = []
+    for n, job in enumerate(jobs, 1):
+        head = f"[{n}/{len(jobs)}] " if len(jobs) > 1 else ""
+        blocks.append(head + format_message(job, dashboard_url))
+    return ("\n\n" + "=" * 50 + "\n\n").join(blocks)
+
+
+def send_email(jobs: list[dict], dashboard_url: str = "") -> str:
+    """One mail for a run's matches, best first. -> transport used. Raises."""
     kind = email_transport()
     if kind is None:
         raise NotConfigured("no email transport configured")
     sender = None
     if kind == "resend":
         sender = os.environ.get("MATCH_EMAIL_FROM") or MATCH_EMAIL_FROM
-    return email_channel.send(subject(job), format_message(job, dashboard_url),
+    return email_channel.send(batch_subject(jobs), batch_body(jobs, dashboard_url),
                               transport=kind, sender=sender)
