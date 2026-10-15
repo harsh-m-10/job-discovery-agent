@@ -561,6 +561,11 @@
   token: Freshworks
   category: product
   priority: 2
+- name: PhonePe
+  ats: smartrecruiters
+  token: PHONEPELIMITED
+  category: fintech
+  priority: 2
 - name: ServiceNow
   ats: smartrecruiters
   token: ServiceNow

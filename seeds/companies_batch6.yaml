@@ -21,6 +21,13 @@
   # unreachable on Greenhouse, Lever and Ashby. Mostly operations; ~7 engineering
   # (e.g. Software Dev Engineer I, Bengaluru) on 2026-10-15.
 
+- {name: PhonePe,    ats: smartrecruiters, token: PHONEPELIMITED, category: fintech, priority: 2}   # india=99
+  # Not guessable: "PhonePe" returns nothing. Found by reading the careers page's
+  # own data -- its JS bundle loads www.phonepe.com/apollo/job-postings/latest.json,
+  # whose apply links all point at jobs.smartrecruiters.com/PHONEPELIMITED. That
+  # method (find the JSON the careers page loads, read its apply links) is the
+  # general way to resolve a JS-rendered careers site; see docs/DECISIONS.md.
+
 # Roster pass 2026-10-15 (PLAN 6.8) on SmartRecruiters: of Zoho, Chargebee,
 # Darwinbox, PhonePe, Swiggy, Zomato, Flipkart, Nykaa, Zerodha, Hasura,
 # Atlassian, Infosys, Societe Generale, Siemens, Oracle, Samsung, Rakuten,
