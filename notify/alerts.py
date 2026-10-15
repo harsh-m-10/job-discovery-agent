@@ -31,6 +31,7 @@ ALERT_KINDS = {
     "providers_exhausted": -3,
     "adapter_schema": -4,
     "token_expiry": -5,
+    "roster_audit": -6,
 }
 # adapter_schema runs on a daily canary, so a 20h cooldown lets each day's run
 # speak once without re-alerting if the canary is also triggered by hand.
@@ -38,7 +39,9 @@ COOLDOWN_HOURS = {"ingest_errors": 6, "pipeline_dry": 24,
                   "providers_exhausted": 6, "adapter_schema": 20,
                   # The watchdog checks the token on every run; one mail a day
                   # is enough for a two-week warning and still prompt for a 401.
-                  "token_expiry": 20}
+                  "token_expiry": 20,
+                  # Daily audit; the same finding needs saying once a day at most.
+                  "roster_audit": 20}
 DRY_THRESHOLD_HOURS = 72
 
 

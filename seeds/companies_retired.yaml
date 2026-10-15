@@ -1,0 +1,28 @@
+# seeds/companies_retired.yaml — boards deactivated, and why.
+#
+# Found 2026-10-15: 7 of 124 active boards had never produced a single job
+# since they were added. None ever alerted, because the empty-fetch guard only
+# fires when there are stored rows to protect -- a board that never returned
+# anything looks exactly like a healthy quiet one. Each was fetched unfiltered
+# to tell the cases apart. scripts/audit_roster.py now runs daily to catch the
+# next one.
+#
+# Deactivated (companies.active = false), not deleted: a corrected token can be
+# added as a new row, and these rows keep the history of what was tried.
+
+dead_token:          # the board answers with zero postings at all
+  - {name: Freshworks, ats: lever, token: freshworks,
+     note: "moved to SmartRecruiters (company id Freshworks, 37 India postings); re-added there"}
+  - {name: Plivo, ats: lever, token: plivo}
+
+wrong_company:       # the token resolves to a different employer with the same name
+  - {name: Navi, ats: ashby, token: navi,
+     note: "4 postings, all San Francisco -- not Navi (Bengaluru fintech)"}
+  - {name: Porter, ats: lever, token: porter,
+     note: "26 postings in Amherst MA, Boston, Grand Rapids -- not Porter (Indian logistics)"}
+  - {name: Slice, ats: greenhouse, token: slice,
+     note: "27 postings in New Jersey, Philadelphia, Skopje -- not slice (Indian fintech)"}
+
+no_india_headcount:  # right company, live board, never an India posting
+  - {name: Cribl, ats: greenhouse, token: cribl, note: "66 postings, none in India"}
+  - {name: Included Health, ats: lever, token: includedhealth, note: "50 postings, all US"}
