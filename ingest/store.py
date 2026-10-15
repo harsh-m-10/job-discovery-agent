@@ -116,8 +116,8 @@ class Store:
     def existing_jobs(self, company_id: int) -> dict[str, dict]:
         rows = self._select_all(
             "jobs",
-            f"select=id,ats_job_id,content_hash,closed_at,reopen_count"
-            f"&company_id=eq.{company_id}",
+            f"select=id,ats_job_id,content_hash,closed_at,reopen_count,"
+            f"last_seen_at&company_id=eq.{company_id}",
         )
         return {r["ats_job_id"]: r for r in rows}
 

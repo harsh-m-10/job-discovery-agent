@@ -16,11 +16,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ingest.lifecycle import plan
+from datetime import timedelta
+
+from ingest.lifecycle import EMPTY_FETCH_GRACE_HOURS, plan
 from ingest.models import RawJob
 from ingest.normalize import (clean_text, content_hash, html_to_text,
                               is_india_relevant, parse_epoch_ms, parse_iso,
                               truncate_for_llm)
+
+
+NOW = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)
 
 
 def job(job_id="1", title="Backend Engineer", location="Bengaluru, India",
@@ -29,11 +34,13 @@ def job(job_id="1", title="Backend Engineer", location="Bengaluru, India",
                   description=description, absolute_url=f"https://x/{job_id}")
 
 
-def existing(job_id="1", pk=10, digest=None, closed_at=None, reopen_count=0):
+def existing(job_id="1", pk=10, digest=None, closed_at=None, reopen_count=0,
+             last_seen_at=None):
     j = job(job_id)
     return {job_id: {"id": pk,
                      "content_hash": digest or content_hash(j.title, j.location, j.description),
-                     "closed_at": closed_at, "reopen_count": reopen_count}}
+                     "closed_at": closed_at, "reopen_count": reopen_count,
+                     "last_seen_at": last_seen_at or NOW.isoformat()}}
 
 
 def test_new_job_inserts():
@@ -79,7 +86,7 @@ def test_already_closed_job_is_not_closed_twice():
     assert p.close_ids == []
 
 
-def test_an_empty_fetch_never_closes_a_board():
+def test_a_fresh_empty_fetch_closes_nothing():
     """The expensive failure, and the reason suppressed_closes exists.
 
     Greenhouse, Lever and Ashby all answer 200 with an empty list when a token
@@ -88,12 +95,45 @@ def test_an_empty_fetch_never_closes_a_board():
     next good run reopens them all. Measured before the guard: 574 rows in 125
     groups sharing one company and one close minute.
     """
-    stored = existing()
-    stored.update(existing(job_id="2", pk=11))
-    p = plan(1, [], stored)
+    stored = existing(last_seen_at=(NOW - timedelta(hours=1)).isoformat())
+    stored.update(existing(job_id="2", pk=11,
+                           last_seen_at=(NOW - timedelta(hours=1)).isoformat()))
+    p = plan(1, [], stored, now=NOW)
     assert p.close_ids == [], "an empty fetch closed the board"
-    assert p.n_closed == 0
     assert p.suppressed_closes == 2
+
+
+def test_a_board_empty_past_the_grace_window_does_close():
+    """The other half, missing from the first version of the guard.
+
+    Fi Money and Confluent emptied for real on 2026-10-12. Because the guard
+    had no ceiling, three rows stayed open and the run alerted on every tick
+    for days. Past the window the rows must close and the alert must stop.
+    """
+    old = (NOW - timedelta(hours=EMPTY_FETCH_GRACE_HOURS + 1)).isoformat()
+    stored = existing(last_seen_at=old)
+    stored.update(existing(job_id="2", pk=11, last_seen_at=old))
+    p = plan(1, [], stored, now=NOW)
+    assert sorted(p.close_ids) == [10, 11]
+    assert p.suppressed_closes == 0, "a long-dead board must stop alerting"
+
+
+def test_the_grace_window_is_applied_per_row():
+    # A board that empties while one row was already stale closes that row and
+    # keeps protecting the fresh one.
+    stored = existing(last_seen_at=(NOW - timedelta(hours=1)).isoformat())
+    stored.update(existing(job_id="2", pk=11,
+                           last_seen_at=(NOW - timedelta(hours=48)).isoformat()))
+    p = plan(1, [], stored, now=NOW)
+    assert p.close_ids == [11]
+    assert p.suppressed_closes == 1
+
+
+def test_a_row_with_no_timestamp_is_protected_not_guessed():
+    stored = existing(last_seen_at="not-a-date")
+    p = plan(1, [], stored, now=NOW)
+    assert p.close_ids == []
+    assert p.suppressed_closes == 1
 
 
 def test_an_empty_fetch_against_an_empty_board_is_not_an_alarm():

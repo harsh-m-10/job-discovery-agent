@@ -14,10 +14,20 @@ Rules (spec §6.3), applied per company against a full board fetch:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from .models import RawJob
 from .normalize import content_hash
+
+#: How long an empty-but-successful fetch may protect a board's open rows.
+#: The guard exists for the transient case - a token that briefly stops
+#: resolving, or an India filter that empties a good fetch - not for a board
+#: that has genuinely gone to zero. Without a ceiling the rows never close,
+#: the queue keeps serving jobs nobody can apply to, and the operator gets an
+#: alert every run forever: Fi Money and Confluent did exactly that for 14 and
+#: 13 consecutive runs after emptying on 2026-10-12.
+#: 24h is roughly five runs at the cadence GitHub actually delivers (~5h).
+EMPTY_FETCH_GRACE_HOURS = 24
 
 
 @dataclass
@@ -36,6 +46,16 @@ class Plan:
     @property
     def n_closed(self) -> int:
         return len(self.close_ids)
+
+
+def _parse_stamp(value) -> datetime | None:
+    if not value:
+        return None
+    try:
+        when = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
 
 
 def _payload(company_id: int, job: RawJob, digest: str, reopen_count: int) -> dict:
@@ -59,7 +79,8 @@ def _payload(company_id: int, job: RawJob, digest: str, reopen_count: int) -> di
     }
 
 
-def plan(company_id: int, seen: list[RawJob], existing: dict[str, dict]) -> Plan:
+def plan(company_id: int, seen: list[RawJob], existing: dict[str, dict],
+         *, now: datetime | None = None) -> Plan:
     """Diff a freshly fetched board against what the DB already holds.
 
     `existing` maps ats_job_id -> {id, content_hash, closed_at, reopen_count}.
@@ -99,14 +120,35 @@ def plan(company_id: int, seen: list[RawJob], existing: dict[str, dict]) -> Plan
     # ...and "the whole board" is exactly what an empty-but-successful fetch is
     # not. Greenhouse, Lever and Ashby all answer 200 with an empty list when a
     # token stops resolving to the intended tenant, and the India filter in
-    # run.py can empty a good fetch on its own. Neither raises, so without this
+    # run.py can empty a good fetch on its own. Neither raises, so without a
     # guard one bad response closes every open role on the board and the next
     # good run reopens them all - 125 such whole-minute groups covering 574
-    # rows were already in the database when this was written. A board that has
-    # genuinely gone to zero stays open one run longer and is reported instead;
-    # that is much the cheaper mistake.
+    # rows were already in the database when the guard was written.
+    #
+    # But the guard has to expire, and the first version did not. Protecting a
+    # row forever is its own bug: the queue keeps offering jobs that are gone,
+    # and every run reports the same error. Fi Money and Confluent emptied for
+    # real on 2026-10-12 and then alerted on 14 and 13 consecutive runs with
+    # three rows frozen open behind them.
+    #
+    # So an empty fetch now protects only rows seen within
+    # EMPTY_FETCH_GRACE_HOURS. Anything older has missed enough consecutive
+    # fetches to count as genuinely withdrawn and closes normally, which also
+    # ends the alert.
     if closes and not seen:
-        result.suppressed_closes = len(closes)
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(
+            hours=EMPTY_FETCH_GRACE_HOURS)
+        aged: list[int] = []
+        for ats_job_id, row in existing.items():
+            if ats_job_id in seen_ids or row.get("closed_at") is not None:
+                continue
+            when = _parse_stamp(row.get("last_seen_at"))
+            # No usable timestamp means staleness cannot be proven, so protect
+            # the row rather than guess.
+            if when is not None and when < cutoff:
+                aged.append(row["id"])
+        result.close_ids = aged
+        result.suppressed_closes = len(closes) - len(aged)
     else:
         result.close_ids = closes
     return result
