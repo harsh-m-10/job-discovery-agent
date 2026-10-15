@@ -15,6 +15,8 @@ from typing import Any, Iterable
 
 import requests
 
+from common.company_key import company_key
+
 LAYER1_TABLES = {"companies", "jobs", "run_log"}
 PAGE = 1000
 
@@ -107,6 +109,31 @@ class Store:
             "select=id,name,ats,board_token,category,priority,last_ok_at,"
             "consecutive_failures&active=eq.true&order=priority.asc,name.asc",
         )
+
+    def fill_missing_company_keys(self) -> int:
+        """Give every company without a company_key one (db/migrations/0009).
+
+        Runs at the start of each ingest so a newly seeded board is joinable
+        to contacts and to outcome emails from its first run, with no separate
+        backfill step to forget. Touches only rows where the key is NULL.
+        Never raises. It is housekeeping at the head of the ingest run, so any
+        failure here would otherwise cost the whole run -- which is what
+        happened on 2026-10-15, seconds after 0009 was applied, while
+        PostgREST's schema cache still lacked the column. A missed fill is
+        retried by the next run.
+        """
+        filled = 0
+        try:
+            rows = self._select_all("companies", "select=id,name&company_key=is.null")
+            for row in rows:
+                self._request("PATCH", "companies", params=f"id=eq.{row['id']}",
+                              body={"company_key": company_key(row["name"]) or None},
+                              prefer="return=minimal")
+                filled += 1
+        except Exception as exc:
+            print(f"  note: company_key fill stopped after {filled} "
+                  f"({type(exc).__name__}: {str(exc)[:160]}); next run retries")
+        return filled
 
     def mark_company_ok(self, company_id: int) -> None:
         self._request("PATCH", "companies", params=f"id=eq.{company_id}",

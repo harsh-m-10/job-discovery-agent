@@ -23,18 +23,11 @@ const THRESHOLD = Number(process.env.PING_THRESHOLD ?? "6.5");
  */
 const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS ?? "5");
 
-/** Company-name normalization mirroring score/referral.py (spec §7.3). */
-function normalizeCompany(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9 ]/g, " ")
-    .replace(
-      /\b(india|global tech|technologies|technology|labs|inc|ltd|pvt|private|limited|llc|corp|solutions|services|gcc|r&d|development cent(er|re))\b/g,
-      " ",
-    )
-    .replace(/\s+/g, " ")
-    .trim();
-}
+// Company identity is computed once, in Python (common/company_key.py), and
+// stored as companies.company_key; contacts carry the same key as
+// connections.company_norm. This file used to re-implement the normaliser with
+// a shorter noise list. scripts/check_boundaries.py now fails the build if one
+// reappears here.
 
 type JobRow = {
   id: number;
@@ -46,7 +39,10 @@ type JobRow = {
   posted_at_precision: "timestamp" | "date" | null;
   first_seen_at: string;
   description?: string;
-  companies: { name: string; category: string | null; headcount_band: string | null } | null;
+  companies: {
+    name: string; category: string | null; headcount_band: string | null;
+    company_key: string | null;
+  } | null;
 };
 
 type ScoreRow = {
@@ -107,7 +103,7 @@ export async function getQueue(): Promise<QueueRow[]> {
       "jobs",
       "select=id,title,location,absolute_url,compensation,posted_at," +
         "posted_at_precision,first_seen_at," +
-        "companies(name,category,headcount_band)&closed_at=is.null",
+        "companies(name,category,headcount_band,company_key)&closed_at=is.null",
     ),
     select<ScoreRow>(
       "job_scores",
@@ -130,7 +126,7 @@ export async function getQueue(): Promise<QueueRow[]> {
     if (tooOld(job)) continue;                            // stale, counted in meta
 
     const company = job.companies?.name ?? "";
-    const contacts = referrals.get(normalizeCompany(company)) ?? [];
+    const contacts = referrals.get(job.companies?.company_key ?? "") ?? [];
     rows.push({
       job_id: job.id,
       title: job.title,
@@ -316,7 +312,7 @@ export async function getJob(jobId: number) {
     }>(
       "jobs",
       "select=id,ats_job_id,title,location,description,absolute_url,compensation," +
-        `posted_at,first_seen_at,closed_at,companies(name,category,headcount_band)&id=eq.${jobId}`,
+        `posted_at,first_seen_at,closed_at,companies(name,category,headcount_band,company_key)&id=eq.${jobId}`,
     ),
     select<ScoreRow & { model: string | null; reject_reason: string | null }>(
       "job_scores", `select=*&job_id=eq.${jobId}`,
@@ -331,7 +327,7 @@ export async function getJob(jobId: number) {
     job,
     score: scores[0] ?? null,
     application: apps[0] ?? null,
-    referrals: (referrals.get(normalizeCompany(company)) ?? []).slice(0, 5),
+    referrals: (referrals.get(job.companies?.company_key ?? "") ?? []).slice(0, 5),
   };
 }
 

@@ -159,6 +159,9 @@ def main() -> int:
             print(f"error: {exc}\n\nRun with --dry-run to test ingestion without a database.",
                   file=sys.stderr)
             return 2
+        filled = store.fill_missing_company_keys()
+        if filled:
+            print(f"assigned company_key to {filled} compan{'y' if filled == 1 else 'ies'}")
         companies = store.active_companies()
 
     if args.only:

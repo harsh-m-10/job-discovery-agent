@@ -24,52 +24,9 @@ except ImportError:  # fuzzy matching is a bonus, exact matching still works
 
 FUZZY_THRESHOLD = 85
 
-# Legal and geographic noise that carries no identity. Order matters only in
-# that multi-word phrases must be stripped before their component words.
-NOISE = re.compile(
-    r"\b("
-    r"global tech(nology|nologies)?|development cent(er|re)|"
-    r"r ?& ?d|research and development|"
-    r"technologies|technology|solutions|services|systems|labs|laboratories|"
-    r"software|consulting|holdings|ventures|group|"
-    r"india|bharat|"
-    r"private limited|pvt ltd|private|limited|pvt|ltd|llc|llp|inc|incorporated|"
-    r"corp|corporation|co|company|plc|gmbh|sa|nv|bv|ag|"
-    r"gcc|global capability cent(er|re)|global in house cent(er|re)"
-    r")\b",
-    re.I,
-)
-
-# Single-token names that become empty or dangerously generic after stripping.
-TOO_GENERIC = {"", "the", "tech", "global", "digital", "data", "cloud", "ai"}
-
-
-def normalize_company(raw: str | None) -> str:
-    """Reduce an employer string to its identity core.
-
-    'Walmart Global Tech India' -> 'walmart'
-    'Razorpay Software Private Limited' -> 'razorpay'
-    'Zeta Suite (Zeta India)' -> 'zeta suite zeta'
-    """
-    if not raw:
-        return ""
-    text = unicodedata.normalize("NFKD", raw)
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    text = text.lower()
-    # Drop anything parenthesised only if content remains without it.
-    stripped = re.sub(r"\([^)]*\)", " ", text)
-    if stripped.strip():
-        text = stripped
-    text = re.sub(r"[^a-z0-9& ]+", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-
-    previous = None
-    while previous != text:            # phrases can nest: "technologies india"
-        previous = text
-        text = NOISE.sub(" ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-
-    return text
+# The normaliser moved to common/company_key.py in Phase 5.1 so outcome
+# capture and the dashboard share it. Re-exported for existing callers.
+from common.company_key import NOISE, TOO_GENERIC, normalize_company  # noqa: E402,F401
 
 
 @dataclass

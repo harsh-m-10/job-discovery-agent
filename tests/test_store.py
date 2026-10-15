@@ -143,6 +143,31 @@ def test_no_run_id_is_a_no_op():
     assert not called, "finish_run wrote without a run_id"
 
 
+def test_the_company_key_fill_never_takes_down_a_run():
+    """Housekeeping at the head of ingest. On 2026-10-15 it crashed a run
+    seconds after migration 0009, before PostgREST's schema cache caught up."""
+    s = store()
+
+    def unknown_column(*a, **k):
+        raise RuntimeError("supabase GET companies -> 400: PGRST204 company_key")
+
+    s._select_all = unknown_column
+    assert s.fill_missing_company_keys() == 0
+
+    s._select_all = lambda *a, **k: [{"id": 1, "name": "Razorpay Software Private Limited"},
+                                     {"id": 2, "name": "Acme"}]
+    written = []
+
+    def flaky(method, table, **k):
+        written.append(k["body"])
+        if len(written) == 2:
+            raise RuntimeError("supabase PATCH companies -> 503")
+
+    s._request = flaky
+    assert s.fill_missing_company_keys() == 1, "must report what it managed, not raise"
+    assert written[0] == {"company_key": "razorpay"}, "the key must come from common/"
+
+
 def test_layer_1_still_refuses_layer_2_tables():
     """The boundary rule, asserted at the one place it is enforced in code."""
     s = store()

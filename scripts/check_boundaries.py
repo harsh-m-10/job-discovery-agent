@@ -35,6 +35,15 @@ COMMON_FORBIDDEN_IMPORTS = re.compile(
     r"^\s*(?:from|import)\s+(ingest|score|notify|dashboard)\b", re.M
 )
 
+# Logic that common/ owns must not be re-implemented in the dashboard (PLAN
+# 8.3). These are distinctive fragments of the company-name noise list and the
+# India keyword list; finding one in TypeScript means a copy has crept back
+# and the stored column (companies.company_key, jobs.role_family) is being
+# bypassed.
+DASHBOARD = ROOT / "dashboard"
+DUPLICATED_LOGIC = re.compile(
+    r"global tech|\bpvt\b|development cent|\bbengaluru\b|\bgurugram\b", re.I)
+
 # Spec §2: scraping any of these risks the account the referral channel depends
 # on, so the constraint is checked mechanically rather than trusted to memory.
 # Matched only in URL position — the codebase legitimately discusses LinkedIn in
@@ -112,6 +121,18 @@ def main() -> int:
                 f"{rel}:{line}: common/ imports from {match.group(1)}/ — it must "
                 f"depend on no layer (see the COMMON note in this file)"
             )
+
+    for pattern in ("*.ts", "*.tsx"):
+        for path in DASHBOARD.rglob(pattern):
+            if SKIP_DIRS & set(path.parts):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for match in DUPLICATED_LOGIC.finditer(text):
+                line = text[:match.start()].count("\n") + 1
+                failures.append(
+                    f"{path.relative_to(ROOT)}:{line}: {match.group(0)!r} looks like a "
+                    f"copy of logic common/ owns — read the stored column instead"
+                )
 
     for path in all_source():
         # This checker names the banned hosts by definition; exempt itself.
