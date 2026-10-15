@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -16,6 +17,18 @@ import requests
 
 LAYER1_TABLES = {"companies", "jobs", "run_log"}
 PAGE = 1000
+
+# run_log columns that a migration adds and that the deployed schema may not
+# have yet. Code and schema cannot be deployed together here: a migration is
+# applied by hand (Supabase SQL editor, or psycopg2 over the ap-south-1
+# pooler), while this file reaches the runner on the next trigger. A run that
+# lands between the two must still record everything the schema *can* hold
+# rather than losing the whole row.
+OPTIONAL_RUN_LOG_COLUMNS = {"boards", "trigger_source", "duration_s"}
+
+# PostgREST's PGRST204 body names the column it could not find, e.g.
+# "Could not find the 'boards' column of 'run_log' in the schema cache".
+_MISSING_COLUMN = re.compile(r"Could not find the '([^']+)' column")
 
 
 class MissingCredentials(RuntimeError):
@@ -163,34 +176,53 @@ class Store:
 
     def finish_run(self, run_id: int | None, *, jobs_seen: int, jobs_new: int,
                    jobs_closed: int, errors: list[dict],
-                   boards: list[dict] | None = None) -> None:
+                   boards: list[dict] | None = None,
+                   trigger_source: str | None = None,
+                   duration_s: float | None = None) -> None:
         """Close out the run_log row.
 
-        `boards` lands in a column added by db/migrations/0004. Code and schema
-        cannot be deployed together here — the migration is pasted into the
-        Supabase SQL editor by hand, while this file reaches the runner on the
-        next cron tick — so a run between the two must not fail. PostgREST
-        answers PGRST204 for an unknown column; that one case retries without
-        it and says so. Every other error still raises.
+        `boards` comes from db/migrations/0004; `trigger_source` and
+        `duration_s` from 0005. Any of the three may be missing from the
+        deployed schema — see OPTIONAL_RUN_LOG_COLUMNS — so the PATCH degrades
+        one column at a time rather than failing the run.
         """
         if run_id is None:
             return
-        body = {
+        self._patch_run_log(run_id, {
             "finished_at": now_iso(),
             "jobs_seen": jobs_seen,
             "jobs_new": jobs_new,
             "jobs_closed": jobs_closed,
             "errors": errors or None,
             "boards": boards or None,
-        }
-        try:
-            self._request("PATCH", "run_log", params=f"id=eq.{run_id}",
-                          body=body, prefer="return=minimal")
-        except RuntimeError as exc:
-            if "boards" not in str(exc) or "PGRST204" not in str(exc):
-                raise
-            print("  note: run_log.boards is missing — per-board stats not "
-                  "recorded. Apply db/migrations/0004_run_log_boards.sql.")
-            body.pop("boards")
-            self._request("PATCH", "run_log", params=f"id=eq.{run_id}",
-                          body=body, prefer="return=minimal")
+            "trigger_source": trigger_source,
+            "duration_s": duration_s,
+        })
+
+    def _patch_run_log(self, run_id: int, body: dict) -> None:
+        """PATCH run_log, dropping whichever columns the schema lacks.
+
+        PostgREST answers PGRST204 naming the one column it could not find, so
+        each miss is removed and the PATCH retried. Only columns in
+        OPTIONAL_RUN_LOG_COLUMNS may be dropped this way: a PGRST204 naming
+        `jobs_seen` means the schema is broken, not merely behind, and must
+        still raise. Every non-PGRST204 error raises untouched.
+        """
+        body = dict(body)
+        while True:
+            try:
+                self._request("PATCH", "run_log", params=f"id=eq.{run_id}",
+                              body=body, prefer="return=minimal")
+                return
+            except RuntimeError as exc:
+                match = _MISSING_COLUMN.search(str(exc))
+                if "PGRST204" not in str(exc) or match is None:
+                    raise
+                column = match.group(1)
+                if (column not in body
+                        or column not in OPTIONAL_RUN_LOG_COLUMNS):
+                    raise
+                body.pop(column)
+                print(f"  note: run_log.{column} is missing, so it was not "
+                      f"recorded. Apply the migration in db/migrations/ that "
+                      f"adds it.")

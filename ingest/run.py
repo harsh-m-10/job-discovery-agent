@@ -5,6 +5,7 @@
     python -m ingest.run --dry-run      # fetch + normalize only, no DB, no creds
     python -m ingest.run --all          # ignore priority pacing, poll everything
     python -m ingest.run --only stripe,zeta
+    python -m ingest.run --source cronjob   # record which trigger fired
 
 Design constraints this file exists to honour:
   * One dead board must never break a run — every company is isolated.
@@ -103,6 +104,12 @@ def main() -> int:
     ap.add_argument("--only", help="comma-separated board tokens")
     ap.add_argument("--keep-all-locations", action="store_true",
                     help="skip the India location gate (diagnostics only)")
+    # Phase 2 drives this pipeline from three redundant triggers. Recording
+    # which one fired is the only way to tell a working primary from a silent
+    # one that the standby is quietly covering for.
+    ap.add_argument("--source", default="manual",
+                    help="which trigger started this run: cronjob | cf-standby "
+                         "| schedule | manual (recorded in run_log)")
     args = ap.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -239,7 +246,8 @@ def main() -> int:
     if store:
         store.finish_run(run_id, jobs_seen=totals["seen"], jobs_new=totals["new"],
                          jobs_closed=totals["closed"], errors=errors,
-                         boards=boards)
+                         boards=boards, trigger_source=args.source,
+                         duration_s=round(elapsed, 3))
 
     # A run that failed on some boards is still a successful run — exit non-zero
     # only if nothing at all got through, which means something systemic.

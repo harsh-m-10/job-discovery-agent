@@ -54,6 +54,9 @@ jobs:
       - name: Workday facet and truncation tests
         run: python tests/test_workday.py
 
+      - name: Store and run_log telemetry tests
+        run: python tests/test_store.py
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

@@ -38,3 +38,6 @@ dashboard/lib/screening.generated.json
 docs/ARCHITECTURE.md
 docs/TRACE.md
 docs/lld/
+docs/STATE.md
+docs/PLAN.md
+docs/DECISIONS.md
