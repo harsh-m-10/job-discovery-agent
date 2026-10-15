@@ -1,0 +1,42 @@
+# seeds/companies_batch5.yaml
+#
+# --- Batch 5: added 2026-10-15. Same rule as batches 3 and 4 — each token was
+# probed against the live JSON board APIs and kept only where the board
+# answered 200 AND currently carries at least one India posting whose URL
+# resolves to the intended company. `india=` is the count at discovery.
+#
+# 56 candidates were probed across observability, LLM/AI infrastructure, data
+# infrastructure, security and India-HQ product (207 ats/token pairs). 21 had
+# a live board; only these 4 had any India role at all. That ratio is the
+# finding, not the yield: US-HQ AI startups — LangChain, Pinecone, Modal,
+# Perplexity, Cohere, Baseten, Fireworks, Weaviate, LlamaIndex, Airbyte,
+# Prefect, Materialize, Snyk, Sentry, Honeycomb, Sysdig, Imply — all have live
+# boards and zero India headcount. Adding more of them costs fetch budget and
+# returns nothing. The companies that hire in India are either India-HQ or
+# large enough to run a GCC.
+#
+# priority: 1 = >=15 India roles, 2 = >=5, 3 = the rest.
+
+- {name: Glean,          ats: greenhouse, token: gleanwork,     category: product,  priority: 1}   # india=25/136, Bangalore
+- {name: SpotDraft,      ats: ashby,      token: spotdraft,     category: product,  priority: 2}   # india=11/15, Bengaluru HQ
+- {name: Together AI,    ats: greenhouse, token: togetherai,    category: infra,    priority: 3}   # india=4/72, Bangalore + Pune
+- {name: Orca Security,  ats: greenhouse, token: orcasecurity,  category: security, priority: 3}   # india=1/10
+
+# Probed and rejected — live board, zero India postings on 2026-10-15. Listed
+# so nobody spends the 90 seconds re-checking them:
+#   greenhouse: honeycomb, imply
+#   ashby:      sentry, langchain, pinecone, fireworks, modal, perplexity,
+#               cohere, baseten, llamaindex, weaviate, airbyte, prefect,
+#               materialize, snyk
+#   lever:      sysdig
+#
+# Probed and found nothing live on any of the three APIs:
+#   dynatrace, splunk, grafana, betterstack, groundcover, middlewarelabs,
+#   wandb/weightsandbiases, together, replicate, huggingface, glean (the
+#   company's token is `gleanwork`), dbtlabs, dagster, timescale, questdb,
+#   orca, aquasecurity, sentinelone, crowdstrike, arcticwolf, zoho, chargebee,
+#   darwinbox, phonepe, swiggy, zomato, flipkart, nykaa, zerodha, khatabook,
+#   setu, jar, leapfinance, hasura, atlassian, zluri, uniphore, eightfoldai
+# Several of those are real companies on an ATS this repo has no adapter for
+# (SuccessFactors, Phenom, Darwinbox, Keka) — see the note in
+# memory/ats-coverage-limit-india.md. More tokens will not reach them.
