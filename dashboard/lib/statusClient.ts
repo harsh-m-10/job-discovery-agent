@@ -1,7 +1,7 @@
 /**
  * Browser-side call to POST /api/status. One definition for the queue card and
  * the job page's buttons (docs/PLAN.md 8.3), which each had their own copy.
- * The secret travels in a header, never the URL, as middleware.ts expects.
+ * The secret travels in a header, never the URL, as proxy.ts expects.
  */
 export async function setStatus(
   secret: string, jobId: number, status: string, viaReferral: boolean,

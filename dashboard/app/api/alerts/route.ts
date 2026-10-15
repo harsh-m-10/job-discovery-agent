@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 /**
  * Job-alert email intake (PLAN 6.7, decided 2026-10-15). apps_script/outcomes.gs
  * forwards every mail under the Gmail label job/alerts -- LinkedIn, Naukri and
- * Indeed alerts -- authenticated by x-dashboard-secret in middleware.ts.
+ * Indeed alerts -- authenticated by x-dashboard-secret in proxy.ts.
  *
  * Stores only. Parsing happens in Python (ingest/alert_parse.py) on the next
  * ingest run, where a template change is fixed by a tested commit rather than
