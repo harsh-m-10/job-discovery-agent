@@ -181,6 +181,42 @@ def age_label(hours: float, date_only: bool = False) -> str:
     return f"{int(hours / 24)}d"
 
 
+def load_contacts(headers: dict) -> list:
+    """Imported LinkedIn connections with a known employer (Phase 5.2)."""
+    from datetime import date
+    from score.referral import Contact
+    rows = get_all(
+        "connections?select=id,full_name,company_raw,company_norm,title,connected_on,"
+        "is_batchmate,profile_url&company_norm=not.is.null", headers)
+    out = []
+    for r in rows:
+        try:
+            on = date.fromisoformat(r["connected_on"]) if r.get("connected_on") else None
+        except ValueError:
+            on = None
+        out.append(Contact(id=r["id"], full_name=r["full_name"], company_raw=r.get("company_raw"),
+                           company_norm=r.get("company_norm") or "", title=r.get("title"),
+                           connected_on=on, is_batchmate=bool(r.get("is_batchmate")),
+                           profile_url=r.get("profile_url")))
+    return out
+
+
+def referrals_for(company: str, title: str, contacts: list, limit: int = 3) -> list[dict]:
+    """The best few people to ask at this job's company (Phase 5.2).
+
+    score/referral.py's match_company and rank_matches were written and tested
+    in an earlier phase and then called only from tests: every ping and digest
+    carried "referrals": []. Ranking is batchmates first, then contacts whose
+    title can speak to the role, then the most recent connections.
+    """
+    from score.referral import match_company, rank_matches
+    ranked = rank_matches(match_company(company, contacts), target_role=title, limit=limit)
+    return [{"id": m.contact.id, "full_name": m.contact.full_name, "title": m.contact.title,
+             "is_batchmate": m.contact.is_batchmate, "profile_url": m.contact.profile_url,
+             "match": m.method}
+            for m in ranked]
+
+
 def resume_variants() -> dict[str, str]:
     """family -> link, empty links dropped (Phase 3.3)."""
     try:
@@ -230,6 +266,7 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
 
     now = datetime.now(timezone.utc)
     variants = resume_variants()
+    contacts = load_contacts(headers)
     out = []
     for score in wanted:
         job = job_by_id.get(score["job_id"])
@@ -258,7 +295,8 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
             "matched_skills": score.get("matched_skills") or [],
             "gap_skills": score.get("gap_skills") or [],
             "reasoning": score.get("reasoning"),
-            "referrals": [],              # populated in phase 5
+            "referrals": referrals_for(
+                (job.get("companies") or {}).get("name", ""), job["title"], contacts),
         })
 
     out.sort(key=lambda j: -(float(j["fit_score"] or 0)))

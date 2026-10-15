@@ -48,6 +48,16 @@ def format_message(job: dict, dashboard_url: str = "") -> str:
         lines.append(f"Resume: {family} -> {variant}")
     elif family:
         lines.append(f"Role family: {family}")
+    # Who to ask, with a link to their profile. PLAN section 2 cites ~40% of
+    # referred candidates reaching interview against ~3% cold, so the contact
+    # belongs in the ping, not three clicks away.
+    for c in (job.get("referrals") or [])[:3]:
+        who = c.get("full_name") or "?"
+        if c.get("title"):
+            who += f" ({c['title'][:40]})"
+        if c.get("is_batchmate"):
+            who += " · batchmate"
+        lines.append(f"Ask: {who}" + (f" {c['profile_url']}" if c.get("profile_url") else ""))
     if job.get("provisional"):
         lines.append("(provisional score — rules only, LLM unavailable)")
     if job.get("absolute_url"):

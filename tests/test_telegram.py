@@ -133,6 +133,43 @@ def test_an_oversized_message_is_truncated_under_the_api_limit():
     assert len(tg.format_message(long_job)) <= tg.MAX_CHARS
 
 
+# --- referrals in the ping (Phase 5.2) -----------------------------------
+
+def contact(i, company, title=None, batchmate=False, days_ago=100):
+    from datetime import date, timedelta
+    from score.referral import Contact
+    return Contact(id=i, full_name=f"Person {i}", company_raw=company,
+                   company_norm=nr_key(company), title=title,
+                   connected_on=date(2026, 10, 1) - timedelta(days=days_ago),
+                   is_batchmate=batchmate, profile_url=f"https://example.invalid/in/p{i}")
+
+
+def nr_key(name):
+    from common.company_key import company_key
+    return company_key(name)
+
+
+def test_referrals_are_ranked_batchmate_then_role_then_recency():
+    people = [contact(1, "Target", "Recruiter", days_ago=10),
+              contact(2, "Target Corporation India", "Senior Software Engineer", days_ago=400),
+              contact(3, "Target", "Product Designer", batchmate=True, days_ago=900),
+              contact(4, "Okta", "Software Engineer")]
+    got = nr.referrals_for("Target", "Backend Engineer", people)
+    assert [c["id"] for c in got] == [3, 2, 1], got
+    assert all(c["profile_url"] for c in got)
+
+
+def test_no_contact_at_the_company_is_an_empty_list():
+    assert nr.referrals_for("Glean", "Engineer", [contact(1, "Okta")]) == []
+
+
+def test_the_ping_names_who_to_ask_with_a_link():
+    j = {**job(1), "referrals": [{"full_name": "Asha Rao", "title": "Staff Engineer",
+                                  "is_batchmate": True, "profile_url": "https://example.invalid/in/asha"}]}
+    text = tg.format_message(j)
+    assert "Ask: Asha Rao (Staff Engineer) · batchmate https://example.invalid/in/asha" in text
+
+
 # --- routing in notify.run.main -----------------------------------------
 
 def run_main(jobs, *, sent_today=0, cap=40, telegram_fails=False, configured=True):
