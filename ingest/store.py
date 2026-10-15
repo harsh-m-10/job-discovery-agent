@@ -168,6 +168,30 @@ class Store:
 
     # --- run log --------------------------------------------------------
 
+    def last_automated_run_start(self, worker: str = "ingest") -> datetime | None:
+        """Start time of the newest *finished*, *automated* run, for the lease.
+
+        Finished only: a row with no finished_at is either still running (the
+        Actions concurrency group already serialises those) or crashed, and a
+        crash must not suppress the retry. Automated only: a manual spot check
+        with --only polls a handful of boards and must not stop the next real
+        poll. `neq.manual` also excludes NULL, i.e. rows from before
+        trigger_source existed, which is the conservative direction -- at worst
+        the first run after deploy polls when it could have skipped.
+        """
+        rows = self._request(
+            "GET", "run_log",
+            params=(f"select=started_at&worker=eq.{worker}"
+                    f"&finished_at=not.is.null&trigger_source=neq.manual"
+                    f"&order=started_at.desc&limit=1"),
+        ).json()
+        if not rows:
+            return None
+        try:
+            return datetime.fromisoformat(rows[0]["started_at"].replace("Z", "+00:00"))
+        except (KeyError, ValueError, AttributeError):
+            return None
+
     def start_run(self, worker: str) -> int | None:
         resp = self._request("POST", "run_log", body={"worker": worker},
                              prefer="return=representation")

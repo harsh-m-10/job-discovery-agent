@@ -176,6 +176,24 @@ def test_no_date_at_all_has_no_precision():
     assert job.posted_at is None and job.posted_at_precision is None
 
 
+def test_a_board_over_its_time_budget_is_skipped_not_returned_partially():
+    """One slow tenant must cost one board, not the whole run -- and must never
+    hand lifecycle.plan a partial board, which would close everything missing."""
+    import ingest.adapters.workday as wd_mod
+    original_budget = wd_mod.BOARD_BUDGET_S
+    try:
+        wd_mod.BOARD_BUDGET_S = -1          # already over budget on entry
+        try:
+            run_fetch_with_detail({"startDate": "2026-10-15", "jobReqId": "R1"})
+        except BoardFetchError as exc:
+            assert exc.transient, "a slow day must not count toward deactivation"
+            assert "budget" in str(exc)
+        else:
+            raise AssertionError("an over-budget board was returned")
+    finally:
+        wd_mod.BOARD_BUDGET_S = original_budget
+
+
 # --- transient vs permanent --------------------------------------------
 
 class FakeResp:

@@ -52,6 +52,21 @@ VERIFIED = ROOT / "seeds" / "companies.verified.yaml"
 DEFAULT_CADENCE = {1: 0, 2: 55, 3: 23 * 60}
 
 
+TRIGGER_SOURCES = ("cronjob", "cf-standby", "schedule", "manual")
+
+
+def lease_blocks(last_start: datetime | None, lease_minutes: float,
+                 now: datetime | None = None) -> bool:
+    """True if an automated run started too recently for this one to poll.
+
+    Pure so it can be tested without a database; main() supplies last_start.
+    """
+    if last_start is None or lease_minutes <= 0:
+        return False
+    now = now or datetime.now(timezone.utc)
+    return now - last_start < timedelta(minutes=lease_minutes)
+
+
 def cadence_from(settings: dict) -> dict[int, int]:
     raw = settings.get("poll_interval_minutes")
     if not isinstance(raw, dict):
@@ -123,9 +138,10 @@ def main() -> int:
     # Phase 2 drives this pipeline from three redundant triggers. Recording
     # which one fired is the only way to tell a working primary from a silent
     # one that the standby is quietly covering for.
-    ap.add_argument("--source", default="manual",
-                    help="which trigger started this run: cronjob | cf-standby "
-                         "| schedule | manual (recorded in run_log)")
+    # A closed set: an unknown value fails the run loudly rather than writing a
+    # typo into run_log that the Phase 2 acceptance query would then miscount.
+    ap.add_argument("--source", default="manual", choices=TRIGGER_SOURCES,
+                    help="which trigger started this run (recorded in run_log)")
     args = ap.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -148,6 +164,18 @@ def main() -> int:
     if args.only:
         wanted = {t.strip().lower() for t in args.only.split(",")}
         companies = [c for c in companies if c["board_token"].lower() in wanted]
+
+    # Run lease. Checked before start_run on purpose: a skipped run writes no
+    # run_log row, or the next trigger would see the skip as a fresh run and
+    # skip too, forever.
+    if store and args.source != "manual" and not args.only:
+        last = store.last_automated_run_start()
+        lease = float(settings.get("run_lease_minutes", 8))
+        if lease_blocks(last, lease):
+            age = (datetime.now(timezone.utc) - last).total_seconds() / 60
+            print(f"skipped: lease — an automated run started {age:.1f} min ago "
+                  f"(lease {lease:g} min). Nothing polled, nothing recorded.")
+            return 0
 
     cadence = cadence_from(settings)
     due = [c for c in companies

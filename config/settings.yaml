@@ -303,6 +303,14 @@ location_keywords:
   - madhya pradesh
   - uttar pradesh
 
+# Run lease (Phase 2.2). From Phase 2 the pipeline has three triggers that can
+# fire close together -- the cron-job.org dispatch, the Cloudflare standby, and
+# GitHub's own schedule. ingest.run exits early when an automated run finished
+# successfully and started less than this many minutes ago, so back-to-back
+# triggers cost one poll, not two. Manual runs (--source manual, or --only)
+# neither honour the lease nor count toward it.
+run_lease_minutes: 8
+
 # notify/run.py deletes `notifications` rows with ok = false older than this
 # on every run. Rows with ok = true are never deleted: they are the per-job
 # dedupe record, and removing one would re-ping its job.

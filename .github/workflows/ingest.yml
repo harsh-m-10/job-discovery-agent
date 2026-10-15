@@ -1,17 +1,30 @@
 name: ingest
 
 on:
-  schedule:
-    # Every 15 minutes. GitHub's scheduler is best-effort: runs drift by 10-20
-    # minutes under load and are sometimes skipped outright — the measured gap
-    # on this repo averages ~53 min. Every run re-fetches whole boards and
-    # diffs, so a missed tick costs latency, never data.
-    #
-    # Affordable only because this repository is public: private repos bill
-    # against a 2,000 min/month allowance, which this schedule exhausted in
-    # nine days. Public repos get unmetered Actions minutes.
-    - cron: "*/15 * * * *"
+  # PRIMARY trigger (Phase 2): an external pinger POSTs a workflow_dispatch
+  # every 15 minutes with inputs.source = "cronjob", and a Cloudflare Worker
+  # dispatches "cf-standby" only when the last run is stale (infra/cf-standby).
+  # Dispatch starts in seconds -- measured 11s -- where `schedule` below was
+  # measured at a 302-minute median interval against its declared 15.
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Which trigger fired this run (cronjob | cf-standby | manual)"
+        required: false
+        default: "manual"
+
+  # TERTIARY trigger: GitHub's own scheduler, kept only as a last resort. It is
+  # best-effort and was measured at a 302-minute median interval, and GitHub
+  # disables it outright after 60 days of repo inactivity, so nothing depends
+  # on it. Minutes are off the quarter-hour because :00 is when it drops runs
+  # hardest. The run lease in ingest/run.py stops it double-polling when a
+  # dispatch has just run.
+  #
+  # Affordable only because this repository is public: private repos bill
+  # against a 2,000 min/month allowance, which a 15-minute schedule exhausted
+  # in nine days. Public repos get unmetered Actions minutes.
+  schedule:
+    - cron: "7,22,37,52 * * * *"
 
 concurrency:
   # A delayed run must never overlap the next one — two workers diffing the same
@@ -22,7 +35,11 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Full runs take 2-8 minutes (measured over the last 12). 14 keeps a stuck
+    # run from holding the concurrency lane past the next 15-minute dispatch;
+    # the per-board budget in the Workday adapter keeps one slow tenant from
+    # being the thing that gets it there.
+    timeout-minutes: 14
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -37,7 +54,12 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Poll boards
-        run: python -m ingest.run
+        # The source goes through an env var rather than being interpolated
+        # into the script, so a dispatch input can never be executed as shell.
+        # ingest.run also restricts it to a closed set of values.
+        env:
+          TRIGGER_SOURCE: ${{ inputs.source || 'schedule' }}
+        run: python -m ingest.run --source "$TRIGGER_SOURCE"
 
       - name: Materialise the candidate profile
         # The profile is not in this repository — it carries compensation and

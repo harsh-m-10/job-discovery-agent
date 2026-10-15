@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import requests
@@ -35,6 +36,16 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
 PAGE = 20                 # Workday caps the listing page size
+
+# Wall-clock ceiling for one board (Phase 2.1). Workday is the only adapter that
+# makes many sequential requests -- up to MAX_PAGES listing calls plus one
+# detail call per posting, each with its own 30s timeout -- so a tenant that
+# answers slowly rather than not at all could hold a worker for hours, and the
+# job-level timeout would then kill every board's run instead of one. Micron,
+# the largest board, takes ~210s locally and less on Actions; 420s leaves 2x
+# headroom. Exceeding it raises a *transient* error: a slow day must not count
+# toward deactivation, and a partial board is never returned for diffing.
+BOARD_BUDGET_S = 420
 MAX_PAGES = 40            # guard: a facet that fails to narrow must not run away
 # The private city list that used to live here is gone: the one place it was
 # used -- the fallback row filter in fetch(), for when a tenant exposes no
@@ -165,6 +176,15 @@ class WorkdayAdapter:
         base = f"https://{tenant}.{host}.myworkdayjobs.com/wday/cxs/{tenant}/{site}"
         public_base = f"https://{tenant}.{host}.myworkdayjobs.com/en-US/{site}"
 
+        deadline = time.monotonic() + BOARD_BUDGET_S
+
+        def over_budget(stage: str) -> None:
+            if time.monotonic() > deadline:
+                raise BoardFetchError(
+                    f"exceeded the {BOARD_BUDGET_S}s per-board budget {stage} "
+                    f"— skipped this run rather than diffed partially",
+                    transient=True)
+
         facets = self._india_facet(base)
 
         postings: list[dict] = []
@@ -172,6 +192,7 @@ class WorkdayAdapter:
         total = 0
         complete = False
         for _ in range(MAX_PAGES):
+            over_budget(f"while listing (offset {offset})")
             payload = self._post(f"{base}/jobs",
                                  {"appliedFacets": facets, "limit": PAGE,
                                   "offset": offset, "searchText": ""})
@@ -211,6 +232,7 @@ class WorkdayAdapter:
             if not facets and not names_india(location):
                 continue
 
+            over_budget(f"after {len(out)} of {len(postings)} details")
             detail = self._detail(base, external_path)
             description = html_to_text(detail.get("jobDescription"))
             # startDate is a bare calendar day on every tenant measured

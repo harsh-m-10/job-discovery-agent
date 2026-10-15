@@ -279,6 +279,17 @@ def test_poll_cadence_comes_from_config_and_matches_the_old_constants():
     assert is_due(recent, True, {3: 1380}), "force must override cadence"
 
 
+def test_the_run_lease():
+    from ingest.run import TRIGGER_SOURCES, lease_blocks
+    now = datetime(2026, 10, 15, 12, 0, tzinfo=timezone.utc)
+    assert lease_blocks(now - timedelta(minutes=3), 8, now), "a 3-min-old run must block"
+    assert not lease_blocks(now - timedelta(minutes=9), 8, now), "a 9-min-old run must not"
+    assert not lease_blocks(None, 8, now), "no prior run must never block"
+    assert not lease_blocks(now - timedelta(minutes=1), 0, now), "lease 0 disables it"
+    # The values the dispatchers and the workflow actually send.
+    assert set(TRIGGER_SOURCES) == {"cronjob", "cf-standby", "schedule", "manual"}
+
+
 def test_date_parsers():
     assert parse_iso("2026-03-04T00:02:52.786+00:00").year == 2026
     assert parse_iso("2026-03-04T00:02:52Z").tzinfo is not None
