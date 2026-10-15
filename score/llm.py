@@ -415,8 +415,9 @@ def score_batch(jobs: list[dict], providers: list[ChatProvider], *,
 
 
 def load_settings() -> dict:
-    with (ROOT / "config" / "settings.yaml").open(encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+    # One loader for every layer (common/settings.py, PLAN 8.3).
+    from common.settings import load_settings as _load
+    return _load()
 
 
 def default_providers() -> list[ChatProvider]:

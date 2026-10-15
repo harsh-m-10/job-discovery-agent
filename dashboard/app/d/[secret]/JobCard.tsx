@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { setStatus } from "@/lib/statusClient";
+import { tierOf } from "@/lib/tier";
 
 export type CardJob = {
   job_id: number;
@@ -27,12 +29,6 @@ export type CardJob = {
 };
 
 /** Intensity tiers. A 9.0 must outrank a 6.6 before the number is read. */
-function tierOf(score: number | null): "high" | "mid" | "low" {
-  if (score === null) return "low";
-  if (score >= 8) return "high";
-  if (score >= 7) return "mid";
-  return "low";
-}
 
 /** Freshness decays: urgent under 6h, visibly faded past 48h. */
 function heatOf(hours: number): "hot" | "warm" | "cool" | "cold" {
@@ -89,12 +85,7 @@ export default function JobCard({
     setBusy(status);
     setError(null);
     try {
-      const res = await fetch("/api/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-dashboard-secret": secret },
-        body: JSON.stringify({ job_id: job.job_id, status, via_referral: viaReferral }),
-      });
-      if (!res.ok) throw new Error(`${res.status}`);
+      await setStatus(secret, job.job_id, status, viaReferral);
       setLeaving(true);
       onDone(label);
       setTimeout(() => router.refresh(), 320);

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { setStatus } from "@/lib/statusClient";
 
 const ACTIONS: { status: string; label: string; primary?: boolean }[] = [
   { status: "applied", label: "Applied", primary: true },
@@ -32,12 +33,7 @@ export default function StatusButtons({
     setBusy(status);
     setError(null);
     try {
-      const res = await fetch("/api/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-dashboard-secret": secret },
-        body: JSON.stringify({ job_id: jobId, status, via_referral: viaReferral }),
-      });
-      if (!res.ok) throw new Error(`${res.status}`);
+      await setStatus(secret, jobId, status, viaReferral);
       // The server owns the frozen hours_since_posted; refresh rather than
       // render a local guess.
       startTransition(() => router.refresh());

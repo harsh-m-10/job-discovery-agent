@@ -1,11 +1,15 @@
 import "server-only";
 import { select, effectivePostedAt, hoursSince, type QueueRow } from "./db";
+import { MAX_DISPLAY_AGE_DAYS, PING_THRESHOLD } from "./settings.generated";
 
-const THRESHOLD = Number(process.env.PING_THRESHOLD ?? "6.5");
+// Both thresholds come from config/settings.yaml via settings.generated.ts
+// (docs/PLAN.md 8.2). They used to be Vercel environment variables that agreed
+// with the YAML by convention only; those variables are no longer read.
+const THRESHOLD = PING_THRESHOLD;
 
 /**
- * Age ceiling for the queue, mirroring max_display_age_days in
- * config/settings.yaml — the looser of the two ceilings, not the scoring gate.
+ * Age ceiling for the queue: max_display_age_days in config/settings.yaml —
+ * the looser of the two ceilings, not the scoring gate.
  *
  * Scoring is gated at 3 days so a stale req never costs an LLM call. This is 5,
  * and the gap is deliberate: scoring is not instant, so a job admitted at 2.9
@@ -21,7 +25,7 @@ const THRESHOLD = Number(process.env.PING_THRESHOLD ?? "6.5");
  *
  * 0 disables the filter.
  */
-const MAX_AGE_DAYS = Number(process.env.MAX_AGE_DAYS ?? "5");
+const MAX_AGE_DAYS = MAX_DISPLAY_AGE_DAYS;
 
 // Company identity is computed once, in Python (common/company_key.py), and
 // stored as companies.company_key; contacts carry the same key as
@@ -104,56 +108,54 @@ function tooOld(row: { posted_at: string | null; first_seen_at: string }): boole
  * queued — rows are only created when a button is pressed, so absence means
  * untouched.
  */
+/** One row of v_queue (db/migrations/0015). */
+type QueueViewRow = {
+  job_id: number; title: string; location: string | null; absolute_url: string;
+  compensation: string | null; posted_at: string | null;
+  posted_at_precision: "timestamp" | "date" | null; first_seen_at: string;
+  company: string; headcount_band: string | null; company_key: string | null;
+  fit_score: number | null; verdict: string; provisional: boolean | null;
+  min_years: number | null; max_years: number | null;
+  matched_skills: string[] | null; gap_skills: string[] | null;
+  reasoning: string | null; status: string;
+};
+
 export async function getQueue(): Promise<QueueRow[]> {
-  const [jobs, scores, apps, referrals] = await Promise.all([
-    select<JobRow>(
-      "jobs",
-      "select=id,title,location,absolute_url,compensation,posted_at," +
-        "posted_at_precision,first_seen_at," +
-        "companies(name,category,headcount_band,company_key)&closed_at=is.null",
+  // The view does the join, the status default and the age; this asks for
+  // exactly the rows the queue shows. It used to read every open job (4,200+,
+  // five pages) to join against a few hundred scores (docs/PLAN.md 8.1).
+  const ageFilter = MAX_AGE_DAYS > 0 ? `&age_days=lte.${MAX_AGE_DAYS}` : "";
+  const [rowsFromView, referrals] = await Promise.all([
+    select<QueueViewRow>(
+      "v_queue",
+      `select=*&fit_score=gte.${THRESHOLD}&status=eq.queued${ageFilter}`,
     ),
-    select<ScoreRow>(
-      "job_scores",
-      "select=job_id,fit_score,verdict,min_years,max_years,matched_skills," +
-        `gap_skills,reasoning,provisional&fit_score=gte.${THRESHOLD}`,
-    ),
-    select<Application>("applications", "select=job_id,status"),
     referralIndex(),
   ]);
 
-  const jobById = new Map(jobs.map((j) => [j.id, j]));
-  const statusByJob = new Map(apps.map((a) => [a.job_id, a.status]));
-
   const rows: QueueRow[] = [];
-  for (const score of scores) {
-    const job = jobById.get(score.job_id);
-    if (!job) continue;                                   // closed since scoring
-    const status = statusByJob.get(score.job_id) ?? "queued";
-    if (status !== "queued") continue;
-    if (tooOld(job)) continue;                            // stale, counted in meta
-
-    const company = job.companies?.name ?? "";
-    const contacts = referrals.get(job.companies?.company_key ?? "") ?? [];
+  for (const v of rowsFromView) {
+    const contacts = referrals.get(v.company_key ?? "") ?? [];
     rows.push({
-      job_id: job.id,
-      title: job.title,
-      company,
-      location: job.location,
-      absolute_url: job.absolute_url,
-      compensation: job.compensation,
-      headcount_band: job.companies?.headcount_band ?? null,
-      posted_at: job.posted_at,
-      posted_at_precision: job.posted_at_precision,
-      first_seen_at: job.first_seen_at,
-      fit_score: score.fit_score,
-      verdict: score.verdict,
-      provisional: Boolean(score.provisional),
-      min_years: score.min_years,
-      max_years: score.max_years,
-      matched_skills: score.matched_skills,
-      gap_skills: score.gap_skills,
-      reasoning: score.reasoning,
-      status,
+      job_id: v.job_id,
+      title: v.title,
+      company: v.company,
+      location: v.location,
+      absolute_url: v.absolute_url,
+      compensation: v.compensation,
+      headcount_band: v.headcount_band,
+      posted_at: v.posted_at,
+      posted_at_precision: v.posted_at_precision,
+      first_seen_at: v.first_seen_at,
+      fit_score: v.fit_score === null ? null : Number(v.fit_score),
+      verdict: v.verdict,
+      provisional: Boolean(v.provisional),
+      min_years: v.min_years,
+      max_years: v.max_years,
+      matched_skills: v.matched_skills,
+      gap_skills: v.gap_skills,
+      reasoning: v.reasoning,
+      status: v.status,
       referrals: contacts
         .sort((a, b) => Number(b.is_batchmate) - Number(a.is_batchmate))
         .slice(0, 3)

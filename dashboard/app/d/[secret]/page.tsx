@@ -81,9 +81,9 @@ export default async function QueuePage({
           <div>
             <b>{meta.hiddenByAge} match(es) hidden — posted more than{" "}
             {meta.maxAgeDays} days ago.</b> They are still scored and stored, just
-            kept out of the queue. Change <code>MAX_AGE_DAYS</code> in the
-            dashboard environment to widen the window, or set it to{" "}
-            <code>0</code> to show everything.
+            kept out of the queue. Change <code>max_display_age_days</code> in{" "}
+            <code>config/settings.yaml</code> to widen the window (0 shows
+            everything), then run <code>python scripts/gen_dashboard_settings.py</code>.
           </div>
         </div>
       )}

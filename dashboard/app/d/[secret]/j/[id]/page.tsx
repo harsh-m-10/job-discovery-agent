@@ -7,6 +7,7 @@ import Copyable from "./Copyable";
 import { screening as loadScreening, type Screening } from "@/lib/screening";
 import ApplyDetails, { type Details } from "./ApplyDetails";
 import ReferralList from "./ReferralList";
+import { tierOf } from "@/lib/tier";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +42,6 @@ function detailsFor(app: Record<string, any>, s: Screening | null): Details {
   };
 }
 
-function tierOf(score: number | null): "high" | "mid" | "low" {
-  if (score === null) return "low";
-  if (score >= 8) return "high";
-  if (score >= 7) return "mid";
-  return "low";
-}
 
 export default async function JobPage({
   params,

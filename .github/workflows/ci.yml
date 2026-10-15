@@ -97,6 +97,11 @@ jobs:
         # Node is preinstalled on ubuntu-latest; node:test needs no packages.
         run: node --test infra/cf-standby/src/index.test.mjs
 
+      - name: Dashboard settings match config/settings.yaml
+        # The dashboard's thresholds are generated from the YAML (PLAN 8.2);
+        # a stale generated file would let the queue and the pings disagree.
+        run: python scripts/gen_dashboard_settings.py --check
+
       - name: Layer boundary and banned-platform check
         run: python scripts/check_boundaries.py
 

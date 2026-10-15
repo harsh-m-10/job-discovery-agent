@@ -79,8 +79,9 @@ def cadence_from(settings: dict) -> dict[int, int]:
 
 
 def load_settings() -> dict:
-    with SETTINGS.open(encoding="utf-8") as fh:
-        return yaml.safe_load(fh) or {}
+    # One loader for every layer (common/settings.py, PLAN 8.3).
+    from common.settings import load_settings as _load
+    return _load(SETTINGS)
 
 
 def is_due(company: dict, force: bool,
