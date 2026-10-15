@@ -1,0 +1,10 @@
+# seeds/companies_batch7.yaml -- JS-rendered careers sites, resolved 2026-10-16.
+#
+# Each careers page was loaded in headless Chromium (Playwright) and its
+# XHR/fetch calls and apply links recorded. Counts are India / Bengaluru on
+# the day. Oracle and Atlassian sit at priority 2: Oracle makes one detail
+# call per posting, and Atlassian's one response is the whole world (~350).
+
+- {name: PromptQL (Hasura), ats: gem,       token: promptql,                    category: product, priority: 2}   # india=1, blr=1; promptql.io/careers -> jobs.gem.com/promptql
+- {name: Oracle,            ats: oracle,    token: "eeho.fa.us2|CX_45001|India", category: gcc,     priority: 2}   # india=14, blr=6; careers.oracle.com loads hcmRestApi on eeho.fa.us2; CX_1 serves the same data
+- {name: Atlassian,         ats: atlassian, token: atlassian,                   category: product, priority: 2}   # india=54, blr=47; all-jobs page renders /endpoint/careers/listings (iCIMS apply links)

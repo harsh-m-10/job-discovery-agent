@@ -136,6 +136,16 @@
   token: trm-labs
   category: fintech
   priority: 3
+- name: Atlassian
+  ats: atlassian
+  token: atlassian
+  category: product
+  priority: 2
+- name: PromptQL (Hasura)
+  ats: gem
+  token: promptql
+  category: product
+  priority: 2
 - name: Abnormal Security
   ats: greenhouse
   token: abnormalsecurity
@@ -545,6 +555,11 @@
   ats: lever
   token: zeta
   category: product
+  priority: 2
+- name: Oracle
+  ats: oracle
+  token: eeho.fa.us2|CX_45001|India
+  category: gcc
   priority: 2
 - name: Bosch
   ats: smartrecruiters
