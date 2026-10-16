@@ -347,7 +347,7 @@ run_lease_minutes: 8
 # notify/run.py deletes `notifications` rows with ok = false older than this
 # on every run. Rows with ok = true are never deleted: they are the per-job
 # dedupe record, and removing one would re-ping its job.
-notification_failure_retention_days: 30
+notification_failure_retention_days: 15
 
 # Board health
 max_consecutive_failures: 5
@@ -392,3 +392,9 @@ aggregator:
       - machine learning engineer
       - data engineer pyspark
       - data engineer
+
+# Database retention (db/migrations/0025, scripts/prune.py; decided 2026-10-16).
+# Nightly, after the backup: closed postings older than this are deleted, or
+# stripped of their description if you were pinged about, applied to or asked
+# a referral for them. Processed alert mail and failed notifications go too.
+retention_days: 15
