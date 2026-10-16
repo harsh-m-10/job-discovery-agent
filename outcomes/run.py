@@ -35,7 +35,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from outcomes.classify import classify          # noqa: E402
-from outcomes.match import App, match           # noqa: E402
+from outcomes.match import App, match, site_label          # noqa: E402
 
 PAGE = 1000
 SIGNIFICANT = {"rejection": "rejected", "interview_invite": "interviewing",
@@ -124,13 +124,15 @@ class Db:
 
 def load_apps(db: Db) -> list[App]:
     rows = db.get_all("applications?select=id,status,applied_at,"
-                      "jobs(title,companies(company_key))")
+                      "jobs(title,ats_job_id,absolute_url,companies(company_key))")
     out = []
     for r in rows:
         job = r.get("jobs") or {}
         out.append(App(id=r["id"], status=r["status"], applied_at=parse(r.get("applied_at")),
                        company_key=((job.get("companies") or {}).get("company_key") or ""),
-                       title=job.get("title") or ""))
+                       title=job.get("title") or "",
+                       job_ref=str(job.get("ats_job_id") or ""),
+                       site_label=site_label(job.get("absolute_url"))))
     return out
 
 

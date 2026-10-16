@@ -47,6 +47,33 @@ class App:
     applied_at: datetime | None
     company_key: str
     title: str
+    job_ref: str = ""          # the ATS's own id for the posting (jobs.ats_job_id)
+    site_label: str = ""       # employer label of the job URL's domain, e.g. "abnormal"
+
+
+# "for the <title> role" / "the position of <title>": a mail that names the job.
+ROLE_PHRASE = re.compile(
+    r"(?:for|in|to)\s+the\s+(.{4,90}?)\s+(?:role|position)\b"
+    r"|position\s+of\s+(.{4,90}?)(?:\.|,|\s-\s|$)", re.I)
+
+# A posting id worth trusting when it turns up in an email: Workday's
+# R0000453965 / R171850, Cisco's 2021635, Greenhouse's 7995761003. Short ids
+# would collide with ordinary numbers in mail (dates, years, counts).
+REF_MIN_LEN = 6
+
+
+def _refs_in(text: str) -> set[str]:
+    return {t.lower() for t in re.findall(r"\b[A-Za-z]?\d{%d,}\b" % (REF_MIN_LEN - 1), text)}
+
+
+def site_label(url: str | None) -> str:
+    """'https://abnormal.ai/careers/jobs/1' -> 'abnormal'; ATS hosts -> ''."""
+    host = re.sub(r"^https?://", "", (url or "").lower()).split("/")[0].split(":")[0]
+    parts = [p for p in host.split(".") if p not in ("www", "careers", "jobs", "job-boards")]
+    if len(parts) < 2:
+        return ""
+    label = parts[-2]
+    return "" if label in ATS_DOMAINS or label in ("myworkdayjobs", "oraclecloud") else label
 
 
 @dataclass(frozen=True)
@@ -79,8 +106,27 @@ def _title_tokens(title: str) -> set[str]:
 def match(sender: str | None, subject: str | None, snippet: str | None,
           received_at: datetime, kind: str, apps: list[App]) -> Match:
     text = f"{sender_text(sender)}\n{subject or ''}\n{(snippet or '')[:400]}"
+
+    # 1. The posting's own id in the mail ("Req. 2021635", "R171850") is
+    # decisive, whatever the company name says. It is also the one signal
+    # strong enough to count against an application marked skipped: the mail
+    # proves it was applied to after all (found 2026-10-16, Cisco 2021631).
+    refs = _refs_in(f"{subject or ''} {snippet or ''}")
+    by_ref = [a for a in apps if a.job_ref and a.job_ref.lower() in refs
+              and a.status != "queued"]
+    if len(by_ref) == 1:
+        a = by_ref[0]
+        return Match(a.id, "matched", (a.id,), (a.company_key,))
+
     live = [a for a in apps if a.status not in ("queued", "skipped") and a.applied_at]
     found = keys_in_text(text, {a.company_key for a in live if a.company_key})
+    # 2. The sender's own domain against the job page's domain. Catches a
+    # renamed employer: Abnormal Security's board and mail say "Abnormal AI",
+    # but both live on abnormal.ai.
+    _, address = parseaddr(sender or "")
+    sender_label = address.lower().rsplit("@", 1)[-1].split(".")[0] if "@" in address else ""
+    if sender_label and sender_label not in ATS_DOMAINS:
+        found |= {a.company_key for a in live if a.site_label == sender_label}
 
     candidates = [
         a for a in live
@@ -91,7 +137,18 @@ def match(sender: str | None, subject: str | None, snippet: str | None,
     companies = tuple(sorted(found))
 
     if len(candidates) == 1:
-        return Match(candidates[0].id, "matched", ids, companies)
+        # One application at the company, but the mail names a different role
+        # ("...apply for the Software Engineer 2 - Product Essentials role" vs
+        # an application for "... AI Transformation Engineering"): that is a
+        # role applied to outside the dashboard, not this one. Found
+        # 2026-10-16 on Abnormal AI.
+        a = candidates[0]
+        named = ROLE_PHRASE.search(f"{subject or ''} {snippet or ''}")
+        tokens = _title_tokens(a.title)
+        if named and tokens and not (tokens & set(re.findall(r"[a-z0-9]+", (named.group(1) or named.group(2) or "").lower()))):
+            state = "ignored" if kind in ("acknowledgement", "other") else "needs_review"
+            return Match(None, state, ids, companies)
+        return Match(a.id, "matched", ids, companies)
 
     if len(candidates) > 1:
         # Tie-break on the distinctive words of the job title.

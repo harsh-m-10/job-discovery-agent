@@ -152,6 +152,54 @@ def test_an_unknown_company_rejection_is_kept_for_review_an_ad_is_dropped():
     assert match("Acme <a@acme.com>", "Newsletter", "", T0, "other", []).state == "ignored"
 
 
+def test_a_requisition_id_in_the_mail_decides_between_identical_titles():
+    # Cisco, 2026-10-16: four "Software Engineer" applications, mails that say
+    # only "the Software Engineer (Req. 2026132)".
+    apps = [App(1, "applied", T0 - timedelta(days=9), "cisco", "Software Engineer", job_ref="2020969"),
+            App(2, "applied", T0 - timedelta(days=3), "cisco", "Software Engineer", job_ref="2026132")]
+    m = match("Cisco@myworkday.com", "Thanks for Considering Cisco",
+              "Thank you for your interest in the Software Engineer (Req. 2026132).",
+              T0, "rejection", apps)
+    assert (m.application_id, m.state) == (2, "matched")
+
+
+def test_a_requisition_id_matches_even_an_application_marked_skipped():
+    apps = [App(1, "skipped", None, "cisco", "Data Engineer", job_ref="2021631")]
+    m = match("Cisco@myworkday.com", "Thanks", "the Data Engineer (Req. 2021631).", T0,
+              "rejection", apps)
+    assert (m.application_id, m.state) == (1, "matched")
+
+
+def test_short_numbers_in_mail_are_not_taken_for_ids():
+    apps = [App(1, "applied", T0 - timedelta(days=3), "okta", "Engineer", job_ref="2026"),
+            App(2, "applied", T0 - timedelta(days=3), "okta", "Engineer II", job_ref="99")]
+    m = match("Okta <x@greenhouse-mail.io>", "Update 2026", "In 2026 we...", T0, "rejection", apps)
+    assert m.state == "needs_review"
+
+
+def test_a_renamed_employer_is_matched_by_its_domain():
+    from outcomes.match import site_label
+    assert site_label("https://abnormal.ai/careers/jobs/7995761003?gh_jid=1") == "abnormal"
+    assert site_label("https://cisco.wd5.myworkdayjobs.com/x") == ""
+    apps = [App(1, "applied", T0 - timedelta(days=6), "abnormal security",
+                "Software Engineer 2 - AI Transformation Engineering", site_label="abnormal")]
+    m = match("no-reply@abnormal.ai", "Your application to Abnormal AI", "Hi", T0, "rejection", apps)
+    assert (m.application_id, m.state) == (1, "matched")
+
+
+def test_a_mail_naming_another_role_is_not_pinned_on_the_only_application():
+    apps = [App(1, "applied", T0 - timedelta(days=6), "abnormal security",
+                "Software Engineer 2 - AI Transformation Engineering", site_label="abnormal")]
+    other = match("no-reply@abnormal.ai", "Your application to Abnormal AI",
+                  "Thank you for taking the time to apply for the Software Engineer 2 - "
+                  "Product Essentials role.", T0, "rejection", apps)
+    assert other.state == "needs_review" and other.application_id is None
+    same = match("no-reply@abnormal.ai", "Your application to Abnormal AI",
+                 "Thank you for taking the time to apply for the Software Engineer 2 - "
+                 "AI Transformation Engineering role.", T0, "rejection", apps)
+    assert (same.application_id, same.state) == (1, "matched")
+
+
 # --- status rule ---------------------------------------------------------------
 
 def ev(kind, hours):
