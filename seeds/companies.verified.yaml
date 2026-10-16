@@ -36,11 +36,6 @@
   token: confluent
   category: product
   priority: 1
-- name: Deepgram
-  ats: ashby
-  token: deepgram
-  category: ai
-  priority: 3
 - name: ElevenLabs
   ats: ashby
   token: elevenlabs
@@ -51,11 +46,6 @@
   token: harvey
   category: ai
   priority: 2
-- name: Hightouch
-  ats: ashby
-  token: hightouch
-  category: data
-  priority: 3
 - name: Hinge Health
   ats: ashby
   token: hinge-health
@@ -66,11 +56,6 @@
   token: kong
   category: devtools
   priority: 2
-- name: Neon
-  ats: ashby
-  token: neon
-  category: data
-  priority: 3
 - name: Notion
   ats: ashby
   token: notion
@@ -111,11 +96,6 @@
   token: snowflake
   category: product
   priority: 2
-- name: Socket
-  ats: ashby
-  token: socket
-  category: security
-  priority: 3
 - name: Socure
   ats: ashby
   token: socure

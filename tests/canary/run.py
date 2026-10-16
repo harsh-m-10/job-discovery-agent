@@ -110,12 +110,29 @@ def check_board(board: dict) -> tuple[str, list[str]]:
         return ("hard" if problems else "ok"), problems
 
     ids = [j.ats_job_id for j in jobs]
+    unstable = None
     if len(set(ids)) != n:
+        # Boards paged by a non-unique sort (SuccessFactors sorts by date) can
+        # repeat a posting when one is published mid-fetch: the pages shift.
+        # Ingest already refuses such a fetch as transient. Only a repeat on a
+        # second fetch is a real, persistent problem (found 2026-10-16: one
+        # duplicate on Standard Chartered at 12:47 IST, clean on the next run).
         dupes = n - len(set(ids))
-        problems.append(
-            f"{dupes} duplicate ats_job_id(s) — the lifecycle diff keys on this, "
-            f"so duplicates silently collapse postings"
-        )
+        print(f"    {dupes} duplicate id(s); refetching once to tell unstable paging "
+              f"from a broken adapter")
+        time.sleep(TRANSIENT_RETRY_DELAY_S)
+        try:
+            again = adapter.fetch(token)
+        except BoardFetchError as exc:
+            return "warn", [f"{dupes} duplicate id(s), and the refetch failed: {exc}"]
+        if len({j.ats_job_id for j in again}) == len(again):
+            unstable = f"{dupes} duplicate id(s) on the first fetch, none on the refetch (unstable paging)"
+            jobs, n = again, len(again)
+        else:
+            problems.append(
+                f"{dupes} duplicate ats_job_id(s), repeated on a refetch — the "
+                f"lifecycle diff keys on this, so duplicates collapse postings"
+            )
 
     for field in REQUIRED_ALWAYS:
         missing = sum(1 for j in jobs if not str(getattr(j, field, "") or "").strip())
@@ -155,9 +172,10 @@ def check_board(board: dict) -> tuple[str, list[str]]:
             f"than {FUTURE_SLACK.days}d in the future — likely a unit error"
         )
 
-    status = "hard" if problems else "ok"
     print(f"    {n} postings, {len(dated)} dated, in {elapsed:.1f}s")
-    return status, problems
+    if problems:
+        return "hard", problems
+    return ("warn", [unstable]) if unstable else ("ok", problems)
 
 
 def main() -> int:

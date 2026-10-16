@@ -26,6 +26,11 @@ wrong_company:       # the token resolves to a different employer with the same 
 no_india_headcount:  # right company, live board, never an India posting
   - {name: Cribl, ats: greenhouse, token: cribl, note: "66 postings, none in India"}
   - {name: Included Health, ats: lever, token: includedhealth, note: "50 postings, all US"}
+  # 2026-10-16, from the daily roster audit (scripts/audit_roster.py):
+  - {name: Hightouch, ats: ashby, token: hightouch, note: "1 posting, Remote (US); no India role ever"}
+  - {name: Neon, ats: ashby, token: neon, note: "4 postings: New York, San Francisco, Remote; no India role ever"}
+  - {name: Deepgram, ats: ashby, token: deepgram, note: "88 postings, 80 Remote (US), none naming India"}
+  - {name: Socket, ats: ashby, token: socket, note: "28 postings, Remote (US) and San Francisco; no India role ever"}
 
 moved:               # the employer left this board; the replacement is in batch 7
   - {name: Postman, ats: greenhouse, token: postman,
