@@ -116,6 +116,20 @@ def test_avature_listing_and_detail_fields():
         raise AssertionError("a token without a keyword was accepted")
 
 
+def test_socgen_document_to_job():
+    from ingest.adapters.socgen import to_job
+    doc = {"sourcestr4": "26000KO7", "resulttitle": "Analyst", "sourcestr7": "Bangalore, India",
+           "sourcestr13": "Are you looking for a new opportunity?",
+           "sourcevarchar2": "<p>Client/stakeholder management</p>",
+           "url1": "https://careers.societegenerale.com/en/job-offers/analyst-26000KO7-en",
+           "sourcedatetime1": "2026-10-15 14:00:00", "sourcedatetime2": "2026-10-12 14:00:00"}
+    j = to_job(doc)
+    assert (j.ats_job_id, j.title, j.location) == ("26000KO7", "Analyst", "Bangalore, India")
+    assert "stakeholder management" in j.description and "<p>" not in j.description
+    assert j.posted_at.isoformat() == "2026-10-12T00:00:00+00:00", "publication date, not last update"
+    assert to_job({"resulttitle": "no id"}) is None
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

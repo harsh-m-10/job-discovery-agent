@@ -16,3 +16,6 @@
 # Avature (HTML portal). The search keyword is Bengaluru's spelling on this portal;
 # see ingest/adapters/avature.py for why it is the city and not India (855 roles).
 - {name: Siemens, ats: avature, token: "jobs.siemens.com/en_US/externaljobs|Bangalore", category: gcc, priority: 3}   # 178 listed, 162 Bengaluru; ~4.7 min a fetch (portal throttles), so daily
+
+# Societe Generale's own careers search (Sinequa); apply links go to socgen.taleo.net.
+- {name: Societe Generale, ats: socgen, token: Bangalore, category: gcc, priority: 2}   # 224 listed, 210 Bengaluru; 5 s a fetch

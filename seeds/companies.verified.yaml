@@ -596,6 +596,11 @@
   token: Swiggy
   category: product
   priority: 2
+- name: Societe Generale
+  ats: socgen
+  token: Bangalore
+  category: gcc
+  priority: 2
 - name: Standard Chartered
   ats: successfactors
   token: jobs.standardchartered.com|en_GB

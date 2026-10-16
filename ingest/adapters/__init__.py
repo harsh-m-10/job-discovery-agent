@@ -11,6 +11,7 @@ from .greenhouse import GreenhouseAdapter
 from .lever import LeverAdapter
 from .oracle import OracleAdapter
 from .smartrecruiters import SmartRecruitersAdapter
+from .socgen import SocGenAdapter
 from .successfactors import SuccessFactorsAdapter
 from .workday import WorkdayAdapter
 
@@ -25,6 +26,7 @@ ADAPTERS: dict[str, ATSAdapter] = {
     "oracle": OracleAdapter(),
     "atlassian": AtlassianAdapter(),
     "avature": AvatureAdapter(),
+    "socgen": SocGenAdapter(),
 }
 
 
