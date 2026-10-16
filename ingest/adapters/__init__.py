@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..models import ATSAdapter
 from .ashby import AshbyAdapter
 from .atlassian import AtlassianAdapter
+from .avature import AvatureAdapter
 from .gem import GemAdapter
 from .greenhouse import GreenhouseAdapter
 from .lever import LeverAdapter
@@ -23,6 +24,7 @@ ADAPTERS: dict[str, ATSAdapter] = {
     "gem": GemAdapter(),
     "oracle": OracleAdapter(),
     "atlassian": AtlassianAdapter(),
+    "avature": AvatureAdapter(),
 }
 
 

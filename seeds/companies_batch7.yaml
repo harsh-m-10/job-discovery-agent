@@ -12,3 +12,7 @@
 # Replacements for two boards that died by themselves (seeds/companies_retired.yaml, moved).
 - {name: Postman,             ats: workday, token: "postman|wd108|careers",                    category: product, priority: 2}   # india=9, blr=9
 - {name: Palo Alto Networks,  ats: workday, token: "paloaltonetworks|wd5|panwexternalcareers", category: product, priority: 2}   # india=144, blr=111; absorbed Chronosphere
+
+# Avature (HTML portal). The search keyword is Bengaluru's spelling on this portal;
+# see ingest/adapters/avature.py for why it is the city and not India (855 roles).
+- {name: Siemens, ats: avature, token: "jobs.siemens.com/en_US/externaljobs|Bangalore", category: gcc, priority: 3}   # 178 listed, 162 Bengaluru; ~4.7 min a fetch (portal throttles), so daily

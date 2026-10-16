@@ -141,6 +141,11 @@
   token: atlassian
   category: product
   priority: 2
+- name: Siemens
+  ats: avature
+  token: jobs.siemens.com/en_US/externaljobs|Bangalore
+  category: gcc
+  priority: 3
 - name: PromptQL (Hasura)
   ats: gem
   token: promptql

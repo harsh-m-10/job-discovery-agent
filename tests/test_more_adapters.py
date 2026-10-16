@@ -88,6 +88,34 @@ def test_atlassian_merges_a_req_posted_on_two_portals():
     assert j.posted_at.isoformat() == "2026-10-15T00:00:00+00:00" and j.posted_at_precision == "date"
 
 
+def test_avature_listing_and_detail_fields():
+    import ingest.adapters.avature as av
+    listing = ('<article><h3><a class="link" href="https://jobs.x.com/en_US/p/JobDetail/523697" '
+               'data-au="a">\n  Technical Sales (Bangalore)\n</a></h3></article>')
+    assert av.parse_listing(listing) == [("https://jobs.x.com/en_US/p/JobDetail/523697", "523697",
+                                          "Technical Sales (Bangalore)")]
+    detail = ('<div class="article__content__view__field tf_locations">'
+              '<div class="article__content__view__field__label" > Location(s) </div>'
+              '<div class="article__content__view__field__value"><ul><li>Bangalore - Karnataka - India</li>'
+              '</ul></div></div>'
+              '<div class="article__content__view__field">'
+              '<div class="article__content__view__field__label">Posted since</div>'
+              '<div class="article__content__view__field__value">28-Jul-2026</div></div>'
+              '<div class="article__content__view__field tf_replaceFieldVideoTokens">'
+              '<div class="article__content__view__field__value"><p>Sell things in Bangalore.</p></div></div>'
+              '<div class="article__content__separator"></div>')
+    d = av.parse_detail(detail)
+    assert d["location"] == "Bangalore - Karnataka - India", d
+    assert d["posted_at"].isoformat() == "2026-07-28T00:00:00+00:00"
+    assert d["description"] == "Sell things in Bangalore."
+    try:
+        av.parse_token("jobs.siemens.com/en_US/externaljobs")
+    except BoardFetchError:
+        pass
+    else:
+        raise AssertionError("a token without a keyword was accepted")
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
