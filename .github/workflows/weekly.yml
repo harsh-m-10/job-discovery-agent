@@ -5,9 +5,10 @@ name: weekly
 # read from what the pipeline recorded. notify/weekly.py.
 
 on:
-  schedule:
-    # Sunday 03:43 UTC = 09:13 IST, off the hour.
-    - cron: "43 3 * * 0"
+  # Dispatched by the Cloudflare Worker's hourly cron at Sundays 03:41 UTC (09:11 IST)
+  # (infra/cf-standby/src/index.js hourlyTargets). No GitHub schedule: it was
+  # measured skipping this repo's scheduled runs, and with two triggers the
+  # email could arrive twice.
   workflow_dispatch:
 
 jobs:

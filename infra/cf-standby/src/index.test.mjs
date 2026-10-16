@@ -47,3 +47,33 @@ test("the dispatched source is one ingest.run accepts", async () => {
   const source = JSON.parse(calls[0].init.body).inputs.source;
   assert.ok(["cronjob", "cf", "apps-script", "schedule", "manual"].includes(source));
 });
+
+import { hourly, hourlyTargets } from "./index.js";
+
+const at = (iso) => new Date(iso);
+
+test("Indeed runs every hour; the dailies at their hour", () => {
+  assert.deepEqual(hourlyTargets(at("2026-10-16T05:41:00Z")), ["aggregate.yml"]);
+  assert.deepEqual(hourlyTargets(at("2026-10-16T02:41:00Z")), ["aggregate.yml", "canary.yml"]);
+  assert.deepEqual(hourlyTargets(at("2026-10-16T14:41:00Z")), ["aggregate.yml", "daily.yml"]);
+  assert.deepEqual(hourlyTargets(at("2026-10-16T20:41:00Z")), ["aggregate.yml", "backup.yml"]);
+});
+
+test("weekly on Sunday 03 UTC, keepalive on Monday 03 UTC, healthcheck daily at 03", () => {
+  assert.deepEqual(hourlyTargets(at("2026-10-18T03:41:00Z")),          // Sunday
+    ["aggregate.yml", "healthcheck.yml", "weekly.yml"]);
+  assert.deepEqual(hourlyTargets(at("2026-10-19T03:41:00Z")),          // Monday
+    ["aggregate.yml", "healthcheck.yml", "keepalive.yml"]);
+  assert.deepEqual(hourlyTargets(at("2026-10-16T03:41:00Z")),          // Friday
+    ["aggregate.yml", "healthcheck.yml"]);
+});
+
+test("the hourly tick dispatches each target without inputs, within the subrequest budget", async () => {
+  const calls = [];
+  const impl = async (url, init) => { calls.push({ url, init }); return { status: 204 }; };
+  const out = await hourly({ GH_DISPATCH_PAT: "t" }, impl, at("2026-10-18T03:41:00Z"));
+  assert.equal(out.length, 3);
+  assert.ok(calls.length <= 50);
+  assert.ok(calls[0].url.endsWith("/workflows/aggregate.yml/dispatches"));
+  assert.deepEqual(JSON.parse(calls[0].init.body), { ref: "main" });
+});

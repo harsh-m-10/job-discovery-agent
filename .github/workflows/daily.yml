@@ -5,9 +5,10 @@ name: daily
 # Instant pings are per match (notify/instant.py); this is the look-back.
 
 on:
-  schedule:
-    # 14:43 UTC = 20:13 IST, off the hour.
-    - cron: "43 14 * * *"
+  # Dispatched by the Cloudflare Worker's hourly cron at 14:41 UTC (20:11 IST) daily
+  # (infra/cf-standby/src/index.js hourlyTargets). No GitHub schedule: it was
+  # measured skipping this repo's scheduled runs, and with two triggers the
+  # email could arrive twice.
   workflow_dispatch:
 
 jobs:

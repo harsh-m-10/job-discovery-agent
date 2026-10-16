@@ -9,9 +9,10 @@ compatibility_date = "2026-09-01"
 workers_dev = false
 
 [triggers]
-# Offset 7 minutes from cron-job.org (:00/:15/:30/:45). Free plan: 5 cron
-# triggers per account; this uses one.
-crons = ["7,22,37,52 * * * *"]
+# Ingest at :07/:22/:37/:52, offset from cron-job.org (:00/:15/:30/:45);
+# the other workflows at :41 by UTC hour (src/index.js). Free plan: 5 cron
+# triggers per account; this uses two.
+crons = ["7,22,37,52 * * * *", "41 * * * *"]
 
 [observability]
 enabled = true
