@@ -621,10 +621,20 @@
   token: micron|wd1|External
   category: gcc
   priority: 1
+- name: Palo Alto Networks
+  ats: workday
+  token: paloaltonetworks|wd5|panwexternalcareers
+  category: product
+  priority: 2
 - name: PayPal
   ats: workday
   token: paypal|wd1|jobs
   category: gcc
+  priority: 2
+- name: Postman
+  ats: workday
+  token: postman|wd108|careers
+  category: product
   priority: 2
 - name: Sprinklr
   ats: workday

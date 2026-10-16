@@ -8,3 +8,7 @@
 - {name: PromptQL (Hasura), ats: gem,       token: promptql,                    category: product, priority: 2}   # india=1, blr=1; promptql.io/careers -> jobs.gem.com/promptql
 - {name: Oracle,            ats: oracle,    token: "eeho.fa.us2|CX_45001|India", category: gcc,     priority: 2}   # india=14, blr=6; careers.oracle.com loads hcmRestApi on eeho.fa.us2; CX_1 serves the same data
 - {name: Atlassian,         ats: atlassian, token: atlassian,                   category: product, priority: 2}   # india=54, blr=47; all-jobs page renders /endpoint/careers/listings (iCIMS apply links)
+
+# Replacements for two boards that died by themselves (seeds/companies_retired.yaml, moved).
+- {name: Postman,             ats: workday, token: "postman|wd108|careers",                    category: product, priority: 2}   # india=9, blr=9
+- {name: Palo Alto Networks,  ats: workday, token: "paloaltonetworks|wd5|panwexternalcareers", category: product, priority: 2}   # india=144, blr=111; absorbed Chronosphere

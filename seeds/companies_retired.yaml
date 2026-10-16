@@ -26,3 +26,9 @@ wrong_company:       # the token resolves to a different employer with the same 
 no_india_headcount:  # right company, live board, never an India posting
   - {name: Cribl, ats: greenhouse, token: cribl, note: "66 postings, none in India"}
   - {name: Included Health, ats: lever, token: includedhealth, note: "50 postings, all US"}
+
+moved:               # the employer left this board; the replacement is in batch 7
+  - {name: Postman, ats: greenhouse, token: postman,
+     note: "2026-10-16: careers page now links postman.wd108.myworkdayjobs.com/careers (Workday)"}
+  - {name: Chronosphere, ats: ashby, token: chronospherejobs,
+     note: "2026-10-16: acquired by Palo Alto Networks; chronosphere.io/careers redirects to jobs.paloaltonetworks.com (Workday wd5, panwexternalcareers)"}
