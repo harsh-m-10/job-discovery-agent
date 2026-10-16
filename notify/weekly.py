@@ -77,7 +77,7 @@ def collect(now: datetime | None = None) -> dict:
         "pings": safe(f"notifications?select=job_id,channel&ok=is.true&job_id=not.is.null"
                       f"&sent_at=gte.{since}"),
         "funnel": safe("v_funnel?select=applied_at,ping_to_apply_hours,interview_at,status,"
-                       "rejected_at,responded_at,via_referral"),
+                       "rejected_at,responded_at,via_referral,channel"),
         "events": safe(f"application_events?select=kind,match_state&received_at=gte.{since}"),
         "asks": safe(f"referral_asks?select=outcome,asked_at&asked_at=gte.{since}"),
         "inactive": safe("companies?select=name&active=is.false"),
@@ -114,6 +114,14 @@ def trigger_mix(rows: list[dict], now: datetime) -> list[str]:
         out.append(f"    {source:<12} {len(fires):>4} fires: {ran} ran, "
                    f"{len(fires) - ran} collapsed; {when}{flag}")
     return out
+
+
+def by_channel(applied: list[dict], interviewed: list[dict]) -> list[tuple[str, int, int]]:
+    """[(channel, applications, interviews)] -- direct vs Indeed vs Naukri vs
+    LinkedIn (applications.channel, migration 0023), busiest first."""
+    counts = Counter(r.get("channel") or "unknown" for r in applied)
+    wins = Counter(r.get("channel") or "unknown" for r in interviewed)
+    return [(ch, n, wins.get(ch, 0)) for ch, n in counts.most_common()]
 
 
 def compose(d: dict) -> tuple[str, str]:
@@ -193,6 +201,9 @@ def compose(d: dict) -> tuple[str, str]:
         f"  outcome emails matched: {sum(kinds.values())} "
         f"({', '.join(f'{k} {v}' for k, v in kinds.most_common()) or 'none'}); "
         f"waiting in Review: {review}",
+        "  by channel (all time): " + (", ".join(
+            f"{ch} {n} applied / {i} interview{'s' if i != 1 else ''}"
+            for ch, n, i in by_channel(applied, interviewed)) or "none"),
         f"  referral asks: {len(d['asks'])} "
         f"({', '.join(f'{k} {v}' for k, v in asks.most_common()) or 'none'})",
         "",

@@ -102,6 +102,14 @@ def test_a_clocked_trigger_with_no_fires_at_all_is_flagged():
     assert any("cf" in l and "never" in l and "QUIET" in l for l in body.splitlines())
 
 
+def test_applications_are_split_by_channel():
+    funnel = ([{"applied_at": iso(NOW - timedelta(days=9)), "status": "applied", "channel": "direct"}] * 3
+              + [{"applied_at": iso(NOW - timedelta(days=9)), "status": "interviewing",
+                  "interview_at": iso(NOW), "channel": "indeed"}])
+    _, body = compose(base(funnel=funnel))
+    assert "by channel (all time): direct 3 applied / 0 interviews, indeed 1 applied / 1 interview" in body, body
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
