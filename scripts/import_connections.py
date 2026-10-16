@@ -159,6 +159,20 @@ def upload(records: list[dict]) -> None:
     headers = {"apikey": key, "Authorization": f"Bearer {key}",
                "Content-Type": "application/json", "Prefer": "return=minimal"}
 
+    # Warm flags are set by hand in the dashboard (migration 0024) and are not
+    # in the export. Read them before the wholesale replace and carry them
+    # over by profile URL (stable), falling back to name + company.
+    prior = requests.get(f"{url}/rest/v1/connections?select=full_name,company_norm,profile_url"
+                         f"&warm=is.true", headers=headers, timeout=60)
+    warm = prior.json() if prior.ok else []
+    by_url = {w["profile_url"] for w in warm if w.get("profile_url")}
+    by_name = {(w["full_name"], w.get("company_norm")) for w in warm}
+    for r in records:
+        r["warm"] = (r.get("profile_url") in by_url
+                     or (r["full_name"], r.get("company_norm")) in by_name)
+    if warm:
+        print(f"carried {sum(r['warm'] for r in records)} of {len(warm)} warm flag(s) across")
+
     # Replace wholesale: the export is a full snapshot, and connections that
     # disappeared should not linger as stale referral suggestions.
     requests.delete(f"{url}/rest/v1/connections?id=gt.0", headers=headers, timeout=60)

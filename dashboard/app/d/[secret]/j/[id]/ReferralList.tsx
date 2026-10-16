@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import WarmToggle from "../../WarmToggle";
 
 type Contact = {
   id: number; full_name: string; title: string | null;
-  is_batchmate: boolean | null; profile_url: string | null;
+  is_batchmate: boolean | null; profile_url: string | null; warm?: boolean | null;
 };
 type Ask = { id: number; contact_id: number; asked_at: string; outcome: string | null };
 
@@ -79,8 +80,8 @@ export default function ReferralList({
                 ? <a href={c.profile_url} target="_blank" rel="noreferrer">{c.full_name}</a>
                 : c.full_name}
               {c.title && <span className="role"> · {c.title}</span>}
-              {c.is_batchmate && <span className="batch-pill">batchmate</span>}
             </span>
+            <WarmToggle contactId={c.id} warm={Boolean(c.warm)} secret={secret} />
             {!a ? (
               <button disabled={pending} onClick={() => ask(c)}>Ask</button>
             ) : a.outcome ? (

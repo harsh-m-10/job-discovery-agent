@@ -65,11 +65,11 @@ def test_the_subject_starts_with_the_score_tag_the_gmail_filter_keys_on():
 def test_the_body_carries_what_you_need_to_act_from_the_phone():
     j = job(1, role_family="backend", resume_variant="https://r.invalid/be",
             referrals=[{"full_name": "Asha Rao", "title": "Staff Engineer",
-                        "near_batch": True, "profile_url": "https://p.invalid/asha"}])
+                        "warm": True, "profile_url": "https://p.invalid/asha"}])
     text = instant.format_message(j, "https://dash.invalid/d/s")
     assert text.startswith("8.0 | Engineer 1"), "score must lead"
     assert "Resume: backend -> https://r.invalid/be" in text
-    assert "Ask: Asha Rao (Staff Engineer) · near-batch https://p.invalid/asha" in text
+    assert "Ask: Asha Rao (Staff Engineer) · warm https://p.invalid/asha" in text
     assert "Apply: https://x.invalid/1" in text
     assert "https://dash.invalid/d/s/j/1" in text
     assert "provisional" not in text

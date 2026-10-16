@@ -180,7 +180,7 @@ def load_contacts(headers: dict) -> list:
     from score.referral import Contact
     rows = get_all(
         "connections?select=id,full_name,company_raw,company_norm,title,connected_on,"
-        "is_batchmate,near_batch,profile_url&company_norm=not.is.null", headers)
+        "is_batchmate,near_batch,warm,profile_url&company_norm=not.is.null", headers)
     out = []
     for r in rows:
         try:
@@ -191,7 +191,7 @@ def load_contacts(headers: dict) -> list:
                            company_norm=r.get("company_norm") or "", title=r.get("title"),
                            connected_on=on, is_batchmate=bool(r.get("is_batchmate")),
                            profile_url=r.get("profile_url"),
-                           near_batch=bool(r.get("near_batch"))))
+                           near_batch=bool(r.get("near_batch")), warm=bool(r.get("warm"))))
     return out
 
 
@@ -206,7 +206,8 @@ def referrals_for(company: str, title: str, contacts: list, limit: int = 3) -> l
     from score.referral import match_company, rank_matches
     ranked = rank_matches(match_company(company, contacts), target_role=title, limit=limit)
     return [{"id": m.contact.id, "full_name": m.contact.full_name, "title": m.contact.title,
-             "is_batchmate": m.contact.is_batchmate, "profile_url": m.contact.profile_url,
+             "is_batchmate": m.contact.is_batchmate, "warm": m.contact.warm,
+             "profile_url": m.contact.profile_url,
              "match": m.method}
             for m in ranked]
 

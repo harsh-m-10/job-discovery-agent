@@ -40,6 +40,7 @@ class Contact:
     is_batchmate: bool = False
     profile_url: str | None = None
     near_batch: bool = False
+    warm: bool = False             # marked by hand in the dashboard (0024)
 
 
 @dataclass
@@ -106,15 +107,17 @@ def match_company(company: str, contacts: list[Contact]) -> list[Match]:
 
 def rank_matches(matches: list[Match], target_role: str | None = None,
                  limit: int = 3) -> list[Match]:
-    """Batchmate first, then near-batch, then role affinity, then recency.
+    """Warm (marked by hand) first, then role affinity; the connection-year
+    batchmate / near-batch flag only breaks ties after that, then recency.
 
     Batchmates outrank everyone because a peer from the same graduating cohort
     replies far more often than a senior stranger at the same company.
     """
     def key(m: Match):
         return (
-            0 if m.contact.is_batchmate else 1 if m.contact.near_batch else 2,
+            0 if m.contact.warm else 1,
             -_title_affinity(m.contact.title, target_role),
+            0 if m.contact.is_batchmate else 1 if m.contact.near_batch else 2,
             -(m.contact.connected_on.toordinal() if m.contact.connected_on else 0),
             -m.confidence,
         )

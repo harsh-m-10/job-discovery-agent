@@ -25,7 +25,7 @@ export type CardJob = {
   datedFromSighting: boolean;
   datedToDay: boolean;
   provisional: boolean;
-  referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean }[];
+  referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean; warm: boolean }[];
 };
 
 /** Intensity tiers. A 9.0 must outrank a 6.6 before the number is read. */
@@ -157,7 +157,7 @@ export default function JobCard({
             <span className="referral-name" key={c.id}>
               {c.full_name}
               {c.title && <span className="role"> · {c.title}</span>}
-              {c.is_batchmate && <span className="batch-pill">batchmate</span>}
+              {c.warm && <span className="batch-pill">warm</span>}
             </span>
           ))}
         </div>

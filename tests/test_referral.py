@@ -112,13 +112,15 @@ def test_contacts_without_a_company_are_skipped():
 
 # --- ranking ------------------------------------------------------------
 
-def test_batchmate_outranks_everyone():
+def test_the_batch_year_no_longer_outranks_title_fit():
+    # Until 2026-10-16 a batchmate outranked everyone. The year flag covered 84%
+    # of contacts, so it is now only a tiebreaker; marking warm is the signal.
     people = [
         contact(1, "Stripe", "Staff Engineer", batch=False, when=date(2026, 1, 1)),
         contact(2, "Stripe", "Analyst", batch=True, when=date(2020, 1, 1)),
     ]
     ranked = rank_matches(match_company("Stripe", people))
-    assert ranked[0].contact.id == 2
+    assert ranked[0].contact.id == 1
 
 
 def test_engineering_title_outranks_unrelated_title():
@@ -217,6 +219,23 @@ def test_warmth_windows_from_the_connection_year():
     assert warmth(None, batch, near) == (False, False)
     # No setting at all flags nobody.
     assert warmth(date(2023, 1, 1), *warmth_windows({})) == (False, False)
+
+
+def test_a_warm_contact_outranks_a_better_title_and_the_batch_year():
+    cold_batch = contact(1, "Stripe", title="Staff Software Engineer", batch=True)
+    warm = contact(2, "Stripe", title="Recruiter")
+    warm.warm = True
+    ranked = rank_matches(match_company("Stripe", [cold_batch, warm]), target_role="Backend Engineer")
+    assert [m.contact.id for m in ranked] == [2, 1]
+
+
+def test_the_batch_year_only_breaks_ties():
+    # Same title fit: the batchmate wins the tie. Better title fit beats the year.
+    a = contact(1, "Stripe", title="Recruiter", batch=True, when=date(2023, 1, 1))
+    b = contact(2, "Stripe", title="Recruiter", when=date(2026, 9, 1))
+    c = contact(3, "Stripe", title="Senior Backend Engineer", when=date(2020, 1, 1))
+    ranked = rank_matches(match_company("Stripe", [a, b, c]), target_role="Backend Engineer")
+    assert [m.contact.id for m in ranked] == [3, 1, 2], [m.contact.id for m in ranked]
 
 
 def test_near_batch_ranks_between_batchmates_and_everyone_else():

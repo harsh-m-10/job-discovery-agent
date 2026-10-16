@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "", label: "Queue" },
   { href: "/funnel", label: "Funnel" },
   { href: "/review", label: "Review" },
+  { href: "/contacts", label: "Contacts" },
   { href: "/companies", label: "Boards" },
 ];
 

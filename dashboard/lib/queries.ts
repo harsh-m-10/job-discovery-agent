@@ -75,12 +75,14 @@ async function referralIndex() {
   const contacts = await select<{
     id: number; full_name: string; company_norm: string | null;
     title: string | null; is_batchmate: boolean | null; profile_url: string | null;
+    warm: boolean | null;
   }>(
     "connections",
-    // Batchmates first, then most recent connection: the presentation half of
+    // Warm contacts (marked by hand, migration 0024) first; the connection
+    // year is only a tiebreaker after that. The presentation half of
     // score/referral.py:rank_matches, which also weighs title fit.
-    "select=id,full_name,company_norm,title,is_batchmate,profile_url" +
-      "&order=is_batchmate.desc.nullslast,near_batch.desc,connected_on.desc.nullslast",
+    "select=id,full_name,company_norm,title,is_batchmate,profile_url,warm" +
+      "&order=warm.desc,is_batchmate.desc.nullslast,near_batch.desc,connected_on.desc.nullslast",
   );
 
   const byCompany = new Map<string, typeof contacts>();
@@ -157,12 +159,12 @@ export async function getQueue(): Promise<QueueRow[]> {
       gap_skills: v.gap_skills,
       reasoning: v.reasoning,
       status: v.status,
+      // Already ordered warm-first by referralIndex.
       referrals: contacts
-        .sort((a, b) => Number(b.is_batchmate) - Number(a.is_batchmate))
         .slice(0, 3)
         .map((c) => ({
           id: c.id, full_name: c.full_name, title: c.title,
-          is_batchmate: Boolean(c.is_batchmate),
+          is_batchmate: Boolean(c.is_batchmate), warm: Boolean(c.warm),
         })),
     });
   }
@@ -615,4 +617,39 @@ export async function getCompanies() {
       "consecutive_failures&ats=neq.aggregator" +
       "&order=active.desc,consecutive_failures.desc,name.asc",
   );
+}
+
+export type ContactRow = {
+  id: number; full_name: string; title: string | null; company_norm: string;
+  profile_url: string | null; warm: boolean; connected_on: string | null;
+};
+
+/**
+ * Contacts at companies the pipeline tracks, grouped by company and ordered
+ * warm-first: the list Harsh works through to mark warm contacts (0024).
+ */
+export async function getContacts(): Promise<{ company: string; contacts: ContactRow[] }[]> {
+  const [companies, contacts] = await Promise.all([
+    select<{ name: string; company_key: string | null }>(
+      "companies", "select=name,company_key&active=is.true&company_key=not.is.null"),
+    select<ContactRow>(
+      "connections",
+      "select=id,full_name,title,company_norm,profile_url,warm,connected_on" +
+        "&company_norm=not.is.null&order=warm.desc,connected_on.desc.nullslast"),
+  ]);
+  // One display name per key; the shortest is usually the plain brand.
+  const names = new Map<string, string>();
+  for (const c of companies) {
+    const key = c.company_key ?? "";
+    if (key && (!names.has(key) || c.name.length < names.get(key)!.length)) names.set(key, c.name);
+  }
+  const groups = new Map<string, ContactRow[]>();
+  for (const p of contacts) {
+    if (!names.has(p.company_norm)) continue;
+    if (!groups.has(p.company_norm)) groups.set(p.company_norm, []);
+    groups.get(p.company_norm)!.push(p);
+  }
+  return [...groups.entries()]
+    .map(([key, list]) => ({ company: names.get(key)!, contacts: list }))
+    .sort((a, b) => b.contacts.length - a.contacts.length || a.company.localeCompare(b.company));
 }

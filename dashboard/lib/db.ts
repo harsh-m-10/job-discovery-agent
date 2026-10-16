@@ -152,7 +152,7 @@ export type QueueRow = {
   gap_skills: string[] | null;
   reasoning: string | null;
   status: string;
-  referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean }[];
+  referrals: { id: number; full_name: string; title: string | null; is_batchmate: boolean; warm: boolean }[];
 };
 
 /** Effective posting time: the ATS date when it gave one, else our first sighting. */

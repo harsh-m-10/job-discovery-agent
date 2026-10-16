@@ -559,3 +559,9 @@ pre.jd {
   background: color-mix(in srgb, var(--bad) 12%, transparent);
 }
 .banner[data-kind="error"] .banner-icon { color: var(--bad); }
+
+/* WarmToggle pressed (db/migrations/0024). */
+button.warm-on {
+  border-color: var(--good, #2e7d32);
+  color: var(--good, #2e7d32);
+}

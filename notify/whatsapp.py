@@ -47,10 +47,10 @@ def format_message(job: dict, dashboard_url: str = "") -> str:
 
     contacts = job.get("referrals") or []
     if contacts:
-        batchmates = sum(1 for c in contacts if c.get("is_batchmate"))
+        warm = sum(1 for c in contacts if c.get("warm"))
         note = f"{len(contacts)} contact{'s' if len(contacts) != 1 else ''} here"
-        if batchmates:
-            note += f" ({batchmates} batchmate{'s' if batchmates != 1 else ''})"
+        if warm:
+            note += f" ({warm} warm)"
         lines.append(note)
 
     if job.get("matched_skills"):

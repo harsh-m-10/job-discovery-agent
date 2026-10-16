@@ -64,10 +64,8 @@ def format_message(job: dict, dashboard_url: str = "") -> str:
         who = c.get("full_name") or "?"
         if c.get("title"):
             who += f" ({c['title'][:40]})"
-        if c.get("is_batchmate"):
-            who += " · batchmate"
-        elif c.get("near_batch"):
-            who += " · near-batch"
+        if c.get("warm"):
+            who += " · warm"
         lines.append(f"Ask: {who}" + (f" {c['profile_url']}" if c.get("profile_url") else ""))
     if job.get("source") and job["source"] != "ats":
         lines.append(f"Source: {job['source']}")
