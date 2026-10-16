@@ -59,11 +59,29 @@ def latest_run() -> dict | None:
     return rows[0] if rows else None
 
 
+def retired_on_purpose() -> set[tuple[str, str]]:
+    """(ats, token) of boards retired deliberately, with a reason recorded in
+    seeds/companies_retired.yaml. Those are not news; repeating them in every
+    alert (as on 2026-10-16) buries a board that died by itself."""
+    import yaml
+    path = Path(__file__).resolve().parents[1] / "seeds" / "companies_retired.yaml"
+    try:
+        groups = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return set()
+    return {(str(r.get("ats")), str(r.get("token")).lower())
+            for rows in groups.values() if isinstance(rows, list)
+            for r in rows if isinstance(r, dict)}
+
+
 def deactivated_boards() -> list[str]:
+    """Boards switched off by the failure counter, not by a decision."""
     base, headers = db()
-    rows = requests.get(f"{base}/companies?select=name&active=is.false",
+    rows = requests.get(f"{base}/companies?select=name,ats,board_token&active=is.false",
                         headers=headers, timeout=30).json()
-    return [r["name"] for r in rows]
+    retired = retired_on_purpose()
+    return [r["name"] for r in rows
+            if (r.get("ats"), str(r.get("board_token")).lower()) not in retired]
 
 
 RULES_SHARE_LIMIT = 0.30        # PLAN 7.6
