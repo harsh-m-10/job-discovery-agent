@@ -47,3 +47,8 @@ docs/RUNBOOK.md
 # and the dispatch token into install(); .clasp.json names the script project.
 apps_script/_local_config.gs
 apps_script/.clasp.json
+
+# --- Third-party contact lists (e.g. HR outreach spreadsheets). Personal data of
+# people who never agreed to be here; this repository is public.
+*.xlsx
+*.xls
