@@ -374,24 +374,21 @@ aggregator:
   ttl_days: 21
   indeed:
     enabled: true
-    location: India
+    # Bengaluru only (decided 2026-10-16). Terms follow the resume's role
+    # families: backend/platform (Python services, Kubernetes), GenAI (LLM
+    # integration, agents, RAG), ML (pipelines), data (PySpark).
+    location: Bengaluru, Karnataka
     hours_old: 2
     results_wanted: 15
     pause_seconds: 4
     search_terms:
-      - software engineer
+      - python backend engineer
       - backend engineer
-      - machine learning engineer
-      - generative ai engineer
-      - data engineer
       - platform engineer
-
-# The operator's city (decided 2026-10-16: Bengaluru only). Layer 2 only --
-# ingestion stays India-wide. Jobs elsewhere are rejected before scoring
-# (reason "location") and kept out of pings, digests and the dashboard queue
-# via job_scores.location_ok. A posting that lists Bengaluru among several
-# cities counts. "ka" is Indeed's "KA, India". Remote-in-India counts while
-# include_remote_india is true; set it false for office-in-Bengaluru only.
-preferred_location:
-  keywords: [bengaluru, bangalore, blr, karnataka, ka]
-  include_remote_india: true
+      - software engineer python
+      - generative ai engineer
+      - llm engineer
+      - ai engineer agents
+      - machine learning engineer
+      - data engineer pyspark
+      - data engineer
