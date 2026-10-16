@@ -50,23 +50,35 @@ class ScoreStore:
                 return rows
             offset += PAGE
 
-    def open_jobs(self, only_unscored: bool = True) -> list[dict]:
-        """Open postings joined to their company name.
+    JOB_FIELDS = ("select=id,ats_job_id,title,location,description,absolute_url,"
+                  "compensation,posted_at,first_seen_at,content_hash,role_family,"
+                  "companies(name,category,headcount_band)")
 
-        PostgREST embeds the parent row through the foreign key, so this stays
-        one request rather than a per-job lookup.
+    def open_jobs(self, only_unscored: bool = True) -> list[dict]:
+        """Open postings joined to their company name, newest first.
+
+        Ids first, full rows only for what is wanted. Until 2026-10-16 this
+        read every open posting with its description (5,010 rows, 33 MB) on
+        every 15-minute run and then kept the unscored ones -- usually none.
+        That was ~3 GB a day of database egress, and the request that timed
+        out with a 500 on 2026-10-16 06:37.
         """
-        jobs = self._get(
-            "jobs",
-            "select=id,ats_job_id,title,location,description,absolute_url,"
-            "compensation,posted_at,first_seen_at,content_hash,role_family,"
-            "companies(name,category,headcount_band)&closed_at=is.null"
-            "&order=posted_at.desc",
-        )
         if not only_unscored:
-            return jobs
+            return self._get("jobs", self.JOB_FIELDS + "&closed_at=is.null&order=posted_at.desc")
+        open_ids = {r["id"] for r in self._get("jobs", "select=id&closed_at=is.null")}
         scored = {r["job_id"] for r in self._get("job_scores", "select=job_id")}
-        return [j for j in jobs if j["id"] not in scored]
+        return self.jobs_by_id(sorted(open_ids - scored))
+
+    def jobs_by_id(self, ids, chunk: int = 150, open_only: bool = True) -> list[dict]:
+        """Full rows for these ids (open ones only by default), newest first."""
+        ids = sorted(ids)
+        rows: list[dict] = []
+        for i in range(0, len(ids), chunk):
+            part = ",".join(str(j) for j in ids[i:i + chunk])
+            rows += self._get("jobs", self.JOB_FIELDS + f"&id=in.({part})"
+                              + ("&closed_at=is.null" if open_only else ""))
+        rows.sort(key=lambda r: r.get("posted_at") or "", reverse=True)
+        return rows
 
     def scores(self, verdicts: list[str] | None = None) -> list[dict]:
         params = ("select=job_id,fit_score,verdict,min_years,max_years,"
@@ -141,13 +153,22 @@ class ScoreStore:
     def sync_location_flags(self, rule) -> int:
         """Set job_scores.location_ok = rule(location, description) for every
         open, scored job; PATCH only the rows that change. -> rows changed."""
+        # Locations only: the rule reads the description just when a posting
+        # has no location string, so only those few descriptions are fetched
+        # (this used to pull every scored job's description each run).
         rows = self._get("job_scores", "select=job_id,location_ok,"
-                         "jobs!inner(location,description,closed_at)"
+                         "jobs!inner(location,closed_at)"
                          "&fit_score=not.is.null&jobs.closed_at=is.null")
+        blank = [r["job_id"] for r in rows if not ((r.get("jobs") or {}).get("location") or "").strip()]
+        desc: dict[int, str] = {}
+        for i in range(0, len(blank), 150):
+            part = ",".join(str(j) for j in blank[i:i + 150])
+            desc.update({d["id"]: d.get("description") or ""
+                         for d in self._get("jobs", f"select=id,description&id=in.({part})")})
         flip: dict[bool, list[int]] = {True: [], False: []}
         for r in rows:
             job = r.get("jobs") or {}
-            want = bool(rule(job.get("location"), job.get("description") or ""))
+            want = bool(rule(job.get("location"), desc.get(r["job_id"], "")))
             if want != bool(r.get("location_ok", True)):
                 flip[want].append(r["job_id"])
         for value, ids in flip.items():

@@ -292,7 +292,7 @@ def _main(args, store, max_years, penalties, max_age) -> int:
         # queue until retried, so they must not be left behind silently.
         failed = {s["job_id"] for s in store.scores()
                   if (s.get("reject_reason") or "").startswith("scoring_failed")}
-        jobs = [j for j in store.open_jobs(only_unscored=False) if j["id"] in failed]
+        jobs = store.jobs_by_id(failed)
         print(f"{len(jobs)} job(s) with a failed scoring attempt\n")
     else:
         jobs = store.open_jobs(only_unscored=not args.rescore)
@@ -372,8 +372,10 @@ def _main(args, store, max_years, penalties, max_age) -> int:
         again = failed if rules_only else (provisional | failed)
         have = {j["id"] for j in survivors}
         if again - have:
-            retry = [j for j in store.open_jobs(only_unscored=False)
-                     if j["id"] in again and j["id"] not in have]
+            # By id: this branch runs on every run that has a provisional or
+            # failed score, and reading every open job for it was the bulk
+            # of the per-run database egress until 2026-10-16.
+            retry = store.jobs_by_id(again - have)
             if retry:
                 print(f"re-scoring {len(retry)} job(s) left provisional or failed "
                       f"by an earlier run")
