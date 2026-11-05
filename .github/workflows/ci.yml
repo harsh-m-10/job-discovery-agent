@@ -171,6 +171,14 @@ jobs:
             psql -d source -v ON_ERROR_STOP=1 -q -f "$f"
           done
 
+      # specs/001-dashboard-speed-retention: the seen record keeps removed
+      # postings out (never re-pinged) and the snapshot keeps its contract.
+      # Both run in rolled-back transactions, so the dump below is unaffected.
+      - name: Seen jobs and dashboard snapshot
+        run: |
+          python tests/test_seen_jobs.py postgresql://postgres:scratch@localhost:5432/source
+          python tests/test_snapshot_contract.py postgresql://postgres:scratch@localhost:5432/source
+
       - name: Dump, restore, verify counts and values
         env:
           BACKUP_SOURCE_URL: postgresql://postgres:scratch@localhost:5432/source

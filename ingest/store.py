@@ -21,7 +21,8 @@ from common.paging import stable_order
 # trigger_log (0016) is pipeline telemetry. alert_inbox (0018) holds job-alert
 # mail -- job ads, the input of a Layer 1 source -- forwarded from the
 # operator's Gmail; Layer 1 reads the ads out of it and nothing else.
-LAYER1_TABLES = {"companies", "jobs", "run_log", "trigger_log", "alert_inbox"}
+LAYER1_TABLES = {"companies", "jobs", "run_log", "trigger_log", "alert_inbox",
+                 "job_keys"}   # jobs + seen_jobs, read-only (0026)
 PAGE = 1000
 
 # run_log columns that a migration adds and that the deployed schema may not
@@ -163,10 +164,12 @@ class Store:
     # --- jobs -----------------------------------------------------------
 
     def existing_jobs(self, company_id: int) -> dict[str, dict]:
+        # job_keys = jobs + seen_jobs (0026), so postings removed by retention
+        # are recognised, not re-inserted. Same single request per board.
         rows = self._select_all(
-            "jobs",
+            "job_keys",
             f"select=id,ats_job_id,content_hash,closed_at,reopen_count,"
-            f"last_seen_at&company_id=eq.{company_id}",
+            f"last_seen_at,seen_only&company_id=eq.{company_id}",
         )
         return {r["ats_job_id"]: r for r in rows}
 

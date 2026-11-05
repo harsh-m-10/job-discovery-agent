@@ -168,6 +168,14 @@ jobs:
           GH_DISPATCH_PAT: ${{ secrets.GH_DISPATCH_PAT }}
         run: python -m notify.watchdog
 
+      - name: Dashboard snapshot
+        # Every headline number the dashboard shows, recomputed in Postgres
+        # (db/migrations/0026). Runs after failures too, so the health dot
+        # reflects them; never fails the job.
+        if: always()
+        continue-on-error: true
+        run: python scripts/refresh_snapshot.py
+
       # --- external dead-man's switch ---------------------------------------
       # Both steps are the last thing in the job and neither can fail it:
       # notify.heartbeat always exits 0. See notify/heartbeat.py for why the

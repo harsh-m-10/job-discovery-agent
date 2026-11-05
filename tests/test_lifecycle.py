@@ -316,6 +316,18 @@ def test_date_parsers():
     assert parse_epoch_ms(None) is None
 
 
+def test_a_posting_removed_by_retention_is_neither_stored_nor_closed():
+    # job_keys lists it as seen_only (seen_jobs, migration 0026): the board
+    # still has it, and it must never be inserted (and so never pinged) again.
+    removed = {"9": {"id": None, "content_hash": "h", "closed_at": None,
+                     "reopen_count": 0, "seen_only": True}}
+    p = plan(1, [job("9"), job("2")], removed)
+    assert [u["ats_job_id"] for u in p.upserts] == ["2"] and p.n_new == 1, p.upserts
+    assert p.close_ids == [] and p.touch_ids == []
+    p = plan(1, [job("2")], removed)          # gone from the board: nothing to close
+    assert p.close_ids == []
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

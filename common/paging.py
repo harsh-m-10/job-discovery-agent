@@ -34,6 +34,9 @@ PRIMARY_KEY = {
     "application_events": "id",
     "referral_asks": "id",
     "v_funnel": "application_id",
+    # jobs + seen_jobs (0026). Read per company (ingest) or for aggregator
+    # companies, whose ids are content hashes, so ats_job_id is unique there.
+    "job_keys": "ats_job_id",
 }
 
 

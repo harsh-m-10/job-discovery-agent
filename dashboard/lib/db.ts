@@ -55,6 +55,7 @@ const PRIMARY_KEY: Record<string, string> = {
   jobs: "id", companies: "id", job_scores: "job_id", connections: "id",
   applications: "id", notifications: "id", run_log: "id", trigger_log: "id", alert_inbox: "id",
   application_events: "id", referral_asks: "id", v_funnel: "application_id",
+  job_keys: "ats_job_id",
 };
 
 export function stableOrder(table: string, query: string): string {

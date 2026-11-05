@@ -119,6 +119,9 @@ def plan(items: list[Item], company_ids: dict[str, int], existing: dict[str, dic
             continue
         jid = agg_id(key)
         prior = existing.get(jid)
+        if prior and prior.get("seen_only"):
+            out.skipped_other += 1          # removed by retention (0026): never again
+            continue
         desc = clean_text(item.description)
         if prior and len(prior.get("description") or "") >= len(desc) \
                 and prior.get("closed_at") is None:
@@ -215,8 +218,8 @@ def existing_for(store, company_ids: list[int]) -> dict[str, dict]:
     for i in range(0, len(company_ids), 150):
         chunk = ",".join(str(c) for c in company_ids[i:i + 150])
         for r in store._select_all(
-                "jobs", "select=id,ats_job_id,closed_at,reopen_count,description,source"
-                f"&company_id=in.({chunk})"):
+                "job_keys", "select=id,ats_job_id,closed_at,reopen_count,description,source,"
+                f"seen_only&company_id=in.({chunk})"):
             out[r["ats_job_id"]] = r
     return out
 

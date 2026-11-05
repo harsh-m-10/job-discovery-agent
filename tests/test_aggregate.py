@@ -77,6 +77,14 @@ def test_every_upsert_has_the_same_key_set():
     assert len({tuple(sorted(r)) for r in p.upserts}) == 1
 
 
+def test_a_posting_removed_by_retention_is_skipped():
+    key = agg_id(identity(item()))
+    existing = {key: {"id": None, "closed_at": None, "reopen_count": 0,
+                      "description": None, "source": "indeed", "seen_only": True}}
+    p = plan([item()], IDS, existing, set())
+    assert p.upserts == [] and p.n_new == 0 and p.skipped_other == 1
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

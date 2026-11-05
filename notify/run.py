@@ -243,22 +243,23 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     if not scores:
         return []
 
-    already = {
-        row["job_id"] for row in get_all(
-            "notifications?select=job_id&ok=is.true", headers)
-        if row.get("job_id") is not None
-    }
-    wanted = [s for s in scores if s["job_id"] not in already]
+    # Never ping twice: jobs.pinged_at (migration 0026) is the record. It used
+    # to be every `notifications` row, read in full each run; notifications
+    # are now a 30-day delivery log and pinged_at also survives in seen_jobs
+    # after retention removes the posting.
+    job_by_id: dict[int, dict] = {}
+    all_ids = [s["job_id"] for s in scores]
+    for i in range(0, len(all_ids), 150):
+        ids = ",".join(str(j) for j in all_ids[i:i + 150])
+        for j in get_all(
+                f"jobs?select=id,title,location,absolute_url,compensation,"
+                f"posted_at,posted_at_precision,role_family,first_seen_at,source,companies(name)"
+                f"&closed_at=is.null&pinged_at=is.null&id=in.({ids})",
+                headers):
+            job_by_id[j["id"]] = j
+    wanted = [s for s in scores if s["job_id"] in job_by_id]
     if not wanted:
         return []
-
-    ids = ",".join(str(s["job_id"]) for s in wanted)
-    jobs = get_all(
-        f"jobs?select=id,title,location,absolute_url,compensation,"
-        f"posted_at,posted_at_precision,role_family,first_seen_at,source,companies(name)"
-        f"&closed_at=is.null&id=in.({ids})",
-        headers)
-    job_by_id = {j["id"]: j for j in jobs}
 
     now = datetime.now(timezone.utc)
     variants = resume_variants()
@@ -308,6 +309,13 @@ def record(job_id: int, channel: str, ok: bool, error: str | None) -> None:
                   json={"job_id": job_id, "channel": channel, "ok": ok,
                         "error": (error or "")[:500] or None},
                   timeout=30)
+    if ok and job_id is not None:
+        # The never-ping-twice mark (0026). Any channel that got through counts,
+        # as a successful notifications row did before.
+        requests.patch(f"{base_url()}/jobs?id=eq.{int(job_id)}&pinged_at=is.null",
+                       headers={**db_headers(), "Prefer": "return=minimal"},
+                       json={"pinged_at": datetime.now(timezone.utc).isoformat()},
+                       timeout=30)
 
 
 def digest(entries: list[tuple[dict, str]], threshold: float,

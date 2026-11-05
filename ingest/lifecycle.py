@@ -93,13 +93,20 @@ def plan(company_id: int, seen: list[RawJob], existing: dict[str, dict],
          *, now: datetime | None = None) -> Plan:
     """Diff a freshly fetched board against what the DB already holds.
 
-    `existing` maps ats_job_id -> {id, content_hash, closed_at, reopen_count}.
+    `existing` maps ats_job_id -> {id, content_hash, closed_at, reopen_count},
+    read from job_keys: rows flagged seen_only are postings retention removed
+    (seen_jobs, migration 0026). They are neither stored again nor closed --
+    the board still listing one is expected, and it must never ping again.
     """
     result = Plan()
     seen_ids: set[str] = set()
+    removed = {k for k, r in existing.items() if r.get("seen_only")}
+    existing = {k: r for k, r in existing.items() if not r.get("seen_only")}
 
     for job in seen:
         seen_ids.add(job.ats_job_id)
+        if job.ats_job_id in removed:
+            continue
         digest = content_hash(job.title, job.location, job.description)
         prior = existing.get(job.ats_job_id)
 
