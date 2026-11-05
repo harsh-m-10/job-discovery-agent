@@ -51,12 +51,13 @@ function fallback(): Store {
 
 function shorten(name: string): string {
   // Drop ids and long in-lists so log lines stay readable and group well.
-  return name.replace(/in\.\([^)]*\)/g, "in.(…)").replace(/eq\.\d+/g, "eq.N").slice(0, 120);
+  return name.replace(/in\.\([^)]*\)/g, "in.(...)").replace(/eq\.\d+/g, "eq.N").slice(0, 120);
 }
 
 export function serverTiming(total: number, queries: QueryTiming[]): string {
   const parts = queries.map((q, i) =>
-    `q${i};desc="${q.name.replace(/"/g, "'")} p${q.pages} r${q.rows}";dur=${q.ms.toFixed(1)}`);
+    // Header values must be ASCII (a "…" here made every response a 500).
+    `q${i};desc="${q.name.replace(/"/g, "'").replace(/[^ -~]/g, "?")} p${q.pages} r${q.rows}";dur=${q.ms.toFixed(1)}`);
   parts.push(`total;dur=${total.toFixed(1)}`);
   return parts.join(", ");
 }
