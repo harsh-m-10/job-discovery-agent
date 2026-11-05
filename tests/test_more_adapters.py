@@ -130,6 +130,24 @@ def test_socgen_document_to_job():
     assert to_job({"resulttitle": "no id"}) is None
 
 
+def test_greenhouse_reads_india_from_offices_when_location_is_a_work_mode():
+    import ingest.adapters.greenhouse as gh
+    payload = {"jobs": [
+        {"id": 1, "title": "SWE", "location": {"name": "Hybrid"},
+         "offices": [{"name": "Remote India"}], "content": "", "absolute_url": "u1"},
+        {"id": 2, "title": "SWE", "location": {"name": "Hybrid"},
+         "offices": [{"name": "Austin, TX"}], "content": "", "absolute_url": "u2"},
+        {"id": 3, "title": "SWE", "location": {"name": "Bengaluru, India"},
+         "offices": [{"name": "Bengaluru"}], "content": "", "absolute_url": "u3"},
+    ]}
+    undo = stub(gh, lambda u: payload)
+    try:
+        locs = {j.ats_job_id: j.location for j in gh.GreenhouseAdapter().fetch("x")}
+    finally:
+        undo()
+    assert locs == {"1": "Hybrid · Remote India", "2": "Hybrid", "3": "Bengaluru, India"}, locs
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
@@ -142,3 +160,4 @@ if __name__ == "__main__":
                 print(f"  FAIL  {name}: {exc or 'assertion failed'}")
     print(f"\n{failed} failed" if failed else "\nall tests passed")
     sys.exit(1 if failed else 0)
+

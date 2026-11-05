@@ -9,6 +9,8 @@ block hammering, so the polling cadence is the throttle.
 
 from __future__ import annotations
 
+from common.geo import names_india
+
 from ..http import get_json
 from ..models import RawJob
 from ..normalize import html_to_text, parse_iso
@@ -30,6 +32,13 @@ class GreenhouseAdapter:
                 o.get("name", "") for o in (job.get("offices") or []) if o.get("name")
             )
             location = (job.get("location") or {}).get("name") or offices
+            # Some boards put a work mode in location.name and the city only in
+            # offices: Cloudflare lists 19 "Remote India" roles as "Hybrid",
+            # so the India gate never saw them (found 2026-11-05 by the roster
+            # audit). Offices are appended only when they name India and the
+            # location does not, so no stored posting's location changes.
+            if offices and not names_india(location) and names_india(offices):
+                location = f"{location} · {offices}" if location else offices
             out.append(
                 RawJob(
                     ats_job_id=job_id,

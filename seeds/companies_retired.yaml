@@ -31,9 +31,13 @@ no_india_headcount:  # right company, live board, never an India posting
   - {name: Neon, ats: ashby, token: neon, note: "4 postings: New York, San Francisco, Remote; no India role ever"}
   - {name: Deepgram, ats: ashby, token: deepgram, note: "88 postings, 80 Remote (US), none naming India"}
   - {name: Socket, ats: ashby, token: socket, note: "28 postings, Remote (US) and San Francisco; no India role ever"}
+  # 2026-11-05, roster audit (failing the daily canary run since 2026-10-31):
+  - {name: Dialpad, ats: greenhouse, token: dialpad, note: "12 postings: US, Philippines, Japan; no India role in 3 weeks"}
 
 moved:               # the employer left this board; the replacement is in batch 7
   - {name: Postman, ats: greenhouse, token: postman,
      note: "2026-10-16: careers page now links postman.wd108.myworkdayjobs.com/careers (Workday)"}
   - {name: Chronosphere, ats: ashby, token: chronospherejobs,
      note: "2026-10-16: acquired by Palo Alto Networks; chronosphere.io/careers redirects to jobs.paloaltonetworks.com (Workday wd5, panwexternalcareers)"}
+  - {name: Confluent, ats: ashby, token: confluent,
+     note: "2026-11-05: board empty; careers.confluent.io redirects to ibm.com/careers (IBM acquisition). IBM roles arrive via Indeed"}
