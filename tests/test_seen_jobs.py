@@ -11,6 +11,8 @@ import sys
 
 import psycopg2
 
+RETENTION_RAN = False
+
 
 def check(cur) -> list[str]:
     bad = []
@@ -59,18 +61,88 @@ def check(cur) -> list[str]:
     return bad
 
 
+def _job(cur, company, key, days_old, *, verdict="strong", pinged=False, closed_days=None):
+    cur.execute(
+        "insert into jobs (company_id, ats_job_id, title, absolute_url, content_hash, description,"
+        " first_seen_at, pinged_at, closed_at) values (%s, %s, 'SWE', 'https://x', 'h', 'JD text',"
+        " now() - make_interval(days => %s), case when %s then now() - interval '80 days' end,"
+        " case when %s::int is null then null else now() - make_interval(days => %s::int) end)"
+        " returning id", (company, key, days_old, pinged, closed_days, closed_days))
+    jid = cur.fetchone()[0]
+    cur.execute("insert into job_scores (job_id, fit_score, verdict, location_ok) "
+                "values (%s, %s, %s, true)", (jid, 2 if verdict == "reject" else 8, verdict))
+    return jid
+
+
+def check_retention(cur) -> list[str]:
+    """prune_old_data_v2 (0028) against the operator's windows."""
+    bad = []
+    cur.execute("select id from companies order by id limit 1")
+    company = cur.fetchone()[0]
+    rejected = _job(cur, company, "r-31", 31, verdict="reject")
+    applied = _job(cur, company, "a-100", 100)
+    cur.execute("insert into applications (job_id, status, applied_at) values (%s, 'applied', now())",
+                (applied,))
+    pinged_old = _job(cur, company, "p-91", 91, pinged=True)
+    young = _job(cur, company, "y-40", 40)
+    fresh_reject = _job(cur, company, "r-5", 5, verdict="reject")
+    closed_old = _job(cur, company, "c-95", 95, closed_days=92)
+
+    def count_jobs():
+        cur.execute("select count(*) from jobs"); return cur.fetchone()[0]
+
+    before = count_jobs()
+    cur.execute("select prune_old_data_v2(true)")
+    dry = cur.fetchone()[0]
+    if count_jobs() != before:
+        bad.append("dry run deleted rows")
+    cur.execute("select prune_old_data_v2(false)")
+    real = cur.fetchone()[0]
+    if dry.get("jobs_deleted") != real.get("jobs_deleted"):
+        bad.append(f"dry run counted {dry.get('jobs_deleted')}, real run deleted {real.get('jobs_deleted')}")
+
+    cur.execute("select id, description is not null from jobs where id = any(%s)",
+                ([rejected, applied, pinged_old, young, fresh_reject, closed_old],))
+    left = dict(cur.fetchall())
+    for name, jid in (("rejected 31d", rejected), ("pinged 91d", pinged_old),
+                      ("closed 92d", closed_old)):
+        if jid in left:
+            bad.append(f"{name} should be deleted")
+    if left.get(applied) is not True:
+        bad.append("an applied job must be kept with its description")
+    if left.get(young) is not False:
+        bad.append("a 40-day job must be kept without its description")
+    if left.get(fresh_reject) is not True:
+        bad.append("a 5-day rejected job must be untouched")
+    cur.execute("select ats_job_id, pinged_at is not null from seen_jobs "
+                "where ats_job_id in ('r-31', 'p-91', 'c-95') order by 1")
+    seen = dict(cur.fetchall())
+    if seen != {"c-95": False, "p-91": True, "r-31": False}:
+        bad.append(f"seen_jobs should remember all three, p-91 as pinged: {seen}")
+    cur.execute("select count(*) from applications where job_id = %s", (applied,))
+    if cur.fetchone()[0] != 1:
+        bad.append("an application was touched")
+    return bad
+
+
 def main() -> int:
     conn = psycopg2.connect(sys.argv[1])
     try:
         with conn.cursor() as cur:
             bad = check(cur)
+            cur.execute("select to_regproc('prune_old_data_v2') is not null")
+            if cur.fetchone()[0]:
+                bad += check_retention(cur)
+                global RETENTION_RAN
+                RETENTION_RAN = True
     finally:
         conn.rollback()
         conn.close()
     if bad:
         print("SEEN JOBS FAILED:\n  " + "\n  ".join(bad))
         return 1
-    print("seen jobs: removed postings stay out; new ones go in; pinged_at sticks")
+    print("seen jobs: removed postings stay out; new ones go in; pinged_at sticks"
+          + ("; retention v2 windows hold" if RETENTION_RAN else ""))
     return 0
 
 

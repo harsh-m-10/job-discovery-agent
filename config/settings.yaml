@@ -355,8 +355,9 @@ resume_variants:
 run_lease_minutes: 8
 
 # notify/run.py deletes `notifications` rows with ok = false older than this
-# on every run. Rows with ok = true are never deleted: they are the per-job
-# dedupe record, and removing one would re-ping its job.
+# on every run. Since migration 0026 the never-ping-twice record is
+# jobs.pinged_at (and seen_jobs.pinged_at after a posting is removed), so all
+# notifications are also removed after retention.notifications_days.
 notification_failure_retention_days: 15
 
 # Board health
@@ -403,8 +404,17 @@ aggregator:
       - data engineer pyspark
       - data engineer
 
-# Database retention (db/migrations/0025, scripts/prune.py; decided 2026-10-16).
-# Nightly, after the backup: closed postings older than this are deleted, or
-# stripped of their description if you were pinged about, applied to or asked
-# a referral for them. Processed alert mail and failed notifications go too.
-retention_days: 15
+# Database retention (db/migrations/0028, scripts/prune.py; decided 2026-11-05,
+# replacing the 15-day rule of 2026-10-16). Nightly, after the backup.
+# Never deleted: applications, outcome emails, referral asks, warm tags, and
+# any posting they point at. Deleted postings keep their identity in
+# seen_jobs for seen_days, so they are never stored or pinged again.
+retention:
+  descriptions_days: 30     # description/raw nulled, unless applied to
+  rejected_days: 30         # rejected or out-of-city, never pinged: deleted
+  stale_days: 90            # closed, or never acted on: deleted
+  notifications_days: 30
+  run_log_days: 90          # rolled into daily_stats first
+  seen_days: 180
+  trigger_log_days: 30
+  alert_inbox_days: 30

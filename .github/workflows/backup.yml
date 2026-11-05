@@ -139,16 +139,19 @@ jobs:
           echo "kept: $(ls -1 *.dump.age | wc -l) dumps, $(du -sh --exclude=.git . | cut -f1)"
 
       - name: Retention (after the backup is safely pushed)
-        # db/migrations/0025 via scripts/prune.py: closed postings past
-        # retention_days (15) are deleted, or stripped of their description if
-        # they were pinged, applied to or asked about. Runs only after the push
-        # above succeeded, so everything removed is in tonight's backup.
+        # db/migrations/0028 via scripts/prune.py, windows in
+        # config/settings.yaml:retention. Applications, outcome emails,
+        # referral asks and warm tags are never deleted; removed postings keep
+        # their identity in seen_jobs so they never ping again. Runs only after
+        # the push above succeeded, so everything removed is in tonight's
+        # backup. Then the dashboard snapshot is recomputed.
         if: success() && steps.cfg.outputs.ready == 'true'
         env:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           pip install -q -r requirements.txt
           python scripts/prune.py
+          python scripts/refresh_snapshot.py
 
       # Plain curl, not notify.heartbeat: a failure during tool installation
       # happens before Python and its packages exist, and that is exactly a
