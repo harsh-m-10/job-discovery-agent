@@ -1,64 +1,102 @@
 /*
- * One accent hue (amber), used at varying intensity. Score and freshness are
- * the two signals that must read before any text does, so both are encoded as
- * weight and saturation rather than as another colour.
- *
- * Dark is the default; light is opt-in via a cookie-set data-theme on <html>.
+ * One accent (blue), light and dark, following the system setting unless a
+ * cookie-set data-theme on <html> overrides it (spec 002 FR-013): "system"
+ * writes no attribute, so the media query decides.
  */
 
-:root,
-:root[data-theme="dark"] {
-  --bg: #0b0d11;
-  --bg-grad: radial-gradient(1100px 620px at 12% -10%, #16202e 0%, transparent 60%),
-             radial-gradient(900px 520px at 105% 0%, #1d1708 0%, transparent 55%);
-  --surface: #12151b;
-  --surface-2: #171b23;
-  --surface-3: #1e2330;
-  --line: #262c38;
-  --line-soft: #1c212b;
-  --text: #eef1f6;
-  --text-2: #aab3c2;
-  --text-3: #6f7889;
+:root {
+  --bg: #f7f8fa;
+  --bg-grad: none;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --surface-3: #edeff3;
+  --line: #e3e6eb;
+  --line-soft: #eef0f3;
+  --text: #14171c;
+  --text-2: #5b6472;
+  --text-3: #6b7380;
 
-  --accent: #ffb020;
-  --accent-ink: #120c00;
-  --accent-soft: rgba(255, 176, 32, 0.14);
-  --accent-line: rgba(255, 176, 32, 0.42);
+  --accent: #2457d6;
+  --accent-ink: #ffffff;
+  --accent-soft: #e6eeff;
+  --accent-text: #1d47b5;
+  --accent-line: rgba(36, 87, 214, 0.35);
 
-  --good: #6ee7a8;
-  --warn: #ffb020;
-  --bad: #ff7a6b;
+  --good: #15803d;
+  --good-soft: #dcfce7;
+  --warn: #8a4b00;
+  --warn-soft: #fff1db;
+  --bad: #b42318;
+  --bad-soft: #fde8e6;
+
+  --shadow-sm: 0 1px 2px rgba(16, 20, 30, 0.06);
+  --shadow-md: 0 10px 26px -16px rgba(16, 20, 30, 0.22);
+  --shadow-glow: 0 0 0 1px var(--accent-line);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+  --bg: #0f1115;
+  --bg-grad: none;
+  --surface: #171a20;
+  --surface-2: #1b1f26;
+  --surface-3: #1e222a;
+  --line: #2a2f38;
+  --line-soft: #22262e;
+  --text: #f2f4f7;
+  --text-2: #a3acb9;
+  --text-3: #8a93a1;
+
+  --accent: #6b9bff;
+  --accent-ink: #0b1220;
+  --accent-soft: #1c2a45;
+  --accent-text: #9dbdff;
+  --accent-line: rgba(107, 155, 255, 0.4);
+
+  --good: #4ade80;
+  --good-soft: #14361f;
+  --warn: #f5c26b;
+  --warn-soft: #3a2a10;
+  --bad: #ff8a7a;
+  --bad-soft: #3d1a16;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
-  --shadow-glow: 0 0 0 1px var(--accent-line), 0 10px 34px -16px rgba(255, 176, 32, 0.5);
+  --shadow-glow: 0 0 0 1px var(--accent-line);
+  color-scheme: dark;
+  }
 }
 
-:root[data-theme="light"] {
-  --bg: #f7f7f5;
-  --bg-grad: radial-gradient(1100px 620px at 12% -10%, #e8edf5 0%, transparent 60%),
-             radial-gradient(900px 520px at 105% 0%, #fdf3dc 0%, transparent 55%);
-  --surface: #ffffff;
-  --surface-2: #f4f5f7;
-  --surface-3: #eceef2;
-  --line: #dcdfe6;
-  --line-soft: #e9ebef;
-  --text: #14171d;
-  --text-2: #4d5666;
-  --text-3: #7b8496;
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --bg-grad: none;
+  --surface: #171a20;
+  --surface-2: #1b1f26;
+  --surface-3: #1e222a;
+  --line: #2a2f38;
+  --line-soft: #22262e;
+  --text: #f2f4f7;
+  --text-2: #a3acb9;
+  --text-3: #8a93a1;
 
-  --accent: #b06d00;
-  --accent-ink: #ffffff;
-  --accent-soft: rgba(176, 109, 0, 0.10);
-  --accent-line: rgba(176, 109, 0, 0.34);
+  --accent: #6b9bff;
+  --accent-ink: #0b1220;
+  --accent-soft: #1c2a45;
+  --accent-text: #9dbdff;
+  --accent-line: rgba(107, 155, 255, 0.4);
 
-  --good: #17794a;
-  --warn: #9a6100;
-  --bad: #c0392b;
+  --good: #4ade80;
+  --good-soft: #14361f;
+  --warn: #f5c26b;
+  --warn-soft: #3a2a10;
+  --bad: #ff8a7a;
+  --bad-soft: #3d1a16;
 
-  --shadow-sm: 0 1px 2px rgba(16, 20, 30, 0.06);
-  --shadow-md: 0 10px 26px -16px rgba(16, 20, 30, 0.28);
-  --shadow-glow: 0 0 0 1px var(--accent-line), 0 10px 30px -18px rgba(176, 109, 0, 0.45);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 0 1px var(--accent-line);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }

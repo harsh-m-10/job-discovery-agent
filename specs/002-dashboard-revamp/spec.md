@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-05
 
-**Status**: Draft (waiting on Q1 and mockup approval)
+**Status**: Approved 2026-11-05 (mockup approved; Q1 answered)
 
 **Input**: User description: "D. UI REVAMP (after A and C; phone-first, since pings open it on the phone). Principle: every number answers a question Harsh would actually ask, in his words. No system internals on the main screens, no instructions to edit YAML or run scripts. TODAY (in progress, new for you, this week, health dot), JOBS (Bengaluru + target families, filter chips, collapsed Older section, cards with actions), PIPELINE (stages with one-tap change, conversion at the bottom), PEOPLE (contacts, warm toggle, asks), HEALTH (ops strip, boards and review). Clean, light/dark following the system setting, one accent colour, readable at 375px. Show a static mockup of TODAY and JOBS first and wait for OK." Follow-up: "do keep light and dark options."
 
@@ -158,9 +158,9 @@ from the health dot or as a badge.
 - **FR-014**: One accent colour across the interface; generous spacing.
 - **FR-015**: A static mockup of TODAY and JOBS (both themes, 375 px) MUST be approved by
   Harsh before any of this feature is built.
-- **FR-016**: Core vs secondary target families: [NEEDS CLARIFICATION: which role families
-  are CORE and which SECONDARY? Not defined in the repo; it may come from part A, which
-  was not shared.]
+- **FR-016**: Target families: CORE = backend, GenAI, ML (including data science);
+  SECONDARY = platform, data engineering, full-stack. Other families (security, other) are
+  hidden by default and reachable through the family chips.
 
 ### Key Entities
 
@@ -182,6 +182,16 @@ from the health dot or as a badge.
 - **SC-004**: All screens pass at 375 px in both themes with no horizontal scroll and text
   contrast at WCAG AA.
 - **SC-005**: The performance budgets of feature 001 still hold after the revamp.
+
+## Clarifications
+
+### Session 2026-11-05
+
+- Q: Which role families are CORE and which SECONDARY? → A: Core = backend, GenAI, ML and
+  data science; secondary = platform, data engineering, full-stack. Data-science titles
+  ("Data Scientist", "Applied Scientist", misspellings) are classified into the ML family.
+- Q: Mockup of TODAY and JOBS? → A: Approved as drawn (light/dark/system switch, chips,
+  skip reasons, collapsed Older).
 
 ## Assumptions
 

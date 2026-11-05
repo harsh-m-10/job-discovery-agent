@@ -39,7 +39,11 @@ from outcomes.match import App, match, site_label          # noqa: E402
 
 PAGE = 1000
 SIGNIFICANT = {"rejection": "rejected", "interview_invite": "interviewing",
-               "assessment": "responded"}
+               "assessment": "assessment"}   # its own stage since 0029 (was "responded")
+
+# What TODAY's "In progress" card says next, until Harsh edits it (spec 002).
+NEXT_STEP = {"assessment": "Complete the assessment",
+             "interviewing": "Interview: confirm the time"}
 
 
 def parse(stamp: str | None) -> datetime | None:
@@ -57,7 +61,7 @@ class Event:
 
 
 def next_status(status: str, updated_at: datetime | None, responded_at: datetime | None,
-                events: list[Event]) -> dict:
+                events: list[Event], next_step: str | None = None) -> dict:
     """-> the PATCH to apply to one application, or {} for no change.
 
     `updated_at` is written as the latest email's own time, not "now", so a
@@ -84,6 +88,8 @@ def next_status(status: str, updated_at: datetime | None, responded_at: datetime
     if status != "offer" and not manual_is_newer and status != target:
         patch["status"] = target
         patch["updated_at"] = latest.received_at.isoformat()
+        if target in NEXT_STEP and not next_step:
+            patch["next_step"] = NEXT_STEP[target]
     return patch
 
 
@@ -183,9 +189,10 @@ def main() -> int:
         events = [Event(e["kind"], parse(e["received_at"])) for e in db.get_all(
             f"application_events?select=kind,received_at&application_id=eq.{app_id}"
             f"&match_state=eq.matched")]
-        app = db.get_all(f"applications?select=status,updated_at,responded_at&id=eq.{app_id}")[0]
+        app = db.get_all(f"applications?select=status,updated_at,responded_at,next_step"
+                         f"&id=eq.{app_id}")[0]
         patch = next_status(app["status"], parse(app.get("updated_at")),
-                            parse(app.get("responded_at")), events)
+                            parse(app.get("responded_at")), events, app.get("next_step"))
         if patch:
             changed += 1
             print(f"  application {app_id}: {app['status']} -> {patch.get('status', app['status'])}")

@@ -17,9 +17,14 @@ Additive changes only; consumers must tolerate missing keys (render "—").
   "applied_this_week": 23,
   "providers_24h": [{"provider": "google", "count": 80}],
   "inactive_boards": ["Postman"],
-  "health": {"level": "green|amber|red", "reasons": ["plain sentence"]}
+  "health": {"level": "green|amber|red", "reasons": ["plain sentence"]},
+  "in_progress": 3,
+  "ops": {"canary": {"at": "ISO", "ok": true}, "backup": {"at": "ISO", "ok": true}}
 }
 ```
+
+v2 (0029, spec 002) adds `in_progress`, `ops` and `new_24h.by_source`; health turns
+amber on a failed canary or a failed or overdue (30 h) backup.
 
 Health level rules (SQL):
 - red: no finished ingest run in 45 min, or stranded > 0.

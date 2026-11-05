@@ -153,6 +153,16 @@ jobs:
           python scripts/prune.py
           python scripts/refresh_snapshot.py
 
+      - name: Record the result for the dashboard's health dot
+        # specs/002-dashboard-revamp: a failed or missing backup turns the dot
+        # amber. requests may not be installed if an early step failed.
+        if: always() && steps.cfg.outputs.ready == 'true'
+        env:
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          pip install -q requests >/dev/null 2>&1 || true
+          python scripts/log_worker.py --worker backup --status "${{ job.status }}"
+
       # Plain curl, not notify.heartbeat: a failure during tool installation
       # happens before Python and its packages exist, and that is exactly a
       # failure the monitor must hear about. Never fails the job itself.

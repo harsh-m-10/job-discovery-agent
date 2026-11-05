@@ -190,12 +190,15 @@ export type SnapshotData = {
   open_jobs: number; unscored: number; stranded: number; llm_scored: number;
   hidden_by_age: number; max_age_days: number; threshold: number;
   queue: { total: number; by_family: Record<string, number> };
-  new_24h: { total: number; by_family: Record<string, number> };
+  new_24h: { total: number; by_family: Record<string, number>; by_source?: Record<string, number> };
   week: { applied: number; responses: number; referral_asks: number };
   applied_total: number; runs_24h: number; inactive_boards: string[];
   providers_7d: { provider: string; count: number }[]; review_pending: number;
   last_run: RunRow | null;
   health: { level: "green" | "amber" | "red"; reasons: string[]; live_providers_24h: number };
+  // v2 (0029, spec 002)
+  in_progress?: number;
+  ops?: { canary: { at: string; ok: boolean } | null; backup: { at: string; ok: boolean } | null };
 };
 
 export type Snapshot = { computedAt: string; ageMinutes: number; data: SnapshotData };

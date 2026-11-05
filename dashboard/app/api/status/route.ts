@@ -3,10 +3,20 @@ import { select, upsert, effectivePostedAt, hoursSince } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// Stages since db/migrations/0029 (spec 002): screen and assessment are new;
+// "responded" stays valid for older rows and is shown as Screen.
 const ALLOWED = new Set([
-  "queued", "applied", "skipped", "responded", "interviewing", "rejected", "offer",
+  "queued", "applied", "skipped", "screen", "responded", "assessment", "interviewing",
+  "rejected", "offer",
 ]);
-const RESPONDED = new Set(["responded", "interviewing", "offer"]);
+const RESPONDED = new Set(["screen", "responded", "assessment", "interviewing", "offer"]);
+
+/** Optional text field: undefined keeps the stored value, "" clears it. */
+function textField(value: unknown, prior: unknown, max = 200): string | null {
+  if (value === undefined) return (prior as string | null) ?? null;
+  const text = String(value ?? "").trim().slice(0, max);
+  return text || null;
+}
 
 /**
  * Status write-back (spec §9.2).
@@ -43,6 +53,7 @@ export async function POST(request: Request) {
       job_id: number; status: string; applied_at: string | null;
       hours_since_posted: number | null; responded_at: string | null;
       via_referral: boolean | null; notes: string | null;
+      next_step: string | null; next_step_at: string | null; skip_reason: string | null;
     }>("applications", `select=*&job_id=eq.${jobId}`),
   ]);
 
@@ -63,6 +74,13 @@ export async function POST(request: Request) {
         ? (prior?.via_referral ?? false)
         : Boolean(body.via_referral),
     notes: body?.notes === undefined ? (prior?.notes ?? null) : String(body.notes),
+    // TODAY's "In progress" card and JOBS' Skip (spec 002).
+    next_step: textField(body?.next_step, prior?.next_step),
+    next_step_at: /^\d{4}-\d{2}-\d{2}$/.test(String(body?.next_step_at ?? ""))
+      ? String(body.next_step_at)
+      : body?.next_step_at === "" ? null : (prior?.next_step_at ?? null),
+    skip_reason: status === "skipped" ? textField(body?.skip_reason, prior?.skip_reason, 80)
+      : (prior?.skip_reason ?? null),
   };
 
   // Applied via referral: link the application to whoever was asked about this

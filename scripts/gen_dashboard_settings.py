@@ -18,6 +18,7 @@ and the generated file is committed to a public repository.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -33,6 +34,9 @@ EXPORTS = {
     "ping_threshold": ("PING_THRESHOLD", "number"),
     "max_display_age_days": ("MAX_DISPLAY_AGE_DAYS", "number"),
 }
+
+# settings.yaml target_families.<key> -> exported string-array constant.
+FAMILY_EXPORTS = {"core": "CORE_FAMILIES", "secondary": "SECONDARY_FAMILIES"}
 
 
 def render() -> str:
@@ -51,6 +55,18 @@ def render() -> str:
             sys.exit(f"{key} must be a number, got {value!r}")
         lines.append(f"/** settings.yaml: {key} */")
         lines.append(f"export const {const}: {ts_type} = {value};")
+    families = settings.get("target_families") or {}
+    for key, const in FAMILY_EXPORTS.items():
+        values = families.get(key)
+        if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+            sys.exit(f"target_families.{key} must be a list of family names")
+        lines.append(f"/** settings.yaml: target_families.{key} */")
+        lines.append(f"export const {const}: readonly string[] = {json.dumps(values)};")
+    label = (settings.get("preferred_location") or {}).get("label")
+    if not isinstance(label, str) or not label.strip():
+        sys.exit("preferred_location.label must name the city")
+    lines.append("/** settings.yaml: preferred_location.label (display only) */")
+    lines.append(f"export const CITY_LABEL: string = {json.dumps(label.strip())};")
     return "\n".join(lines) + "\n"
 
 

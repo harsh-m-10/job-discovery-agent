@@ -28,6 +28,8 @@ CASES = {
         "Machine Learning Engineer", "SDE II - ML", "DS / ML Engineer", "Data Scientist",
         "Associate Data Scientist", "Performance Engineer, On-Device Inference",
         "ML Engineer (Data), Foundational Models",
+        # Data science is core with ML (spec 002); typo from a live posting.
+        "Junior Data Scincetist", "Applied Scientist", "Decision Scientist II",
     ],
     "data": [
         "Data Engineer", "Data Engineer II", "Data Analyst",

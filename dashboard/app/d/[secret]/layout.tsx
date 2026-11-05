@@ -1,12 +1,17 @@
 import Link from "next/link";
-import { logPage } from "@/lib/perf";
 import { cookies } from "next/headers";
-import { getQueueMeta } from "@/lib/queries";
-import ThemeToggle from "./ThemeToggle";
-import Tabs from "./Tabs";
+import { logPage } from "@/lib/perf";
+import { getSnapshot } from "@/lib/queries";
+import Nav from "./Nav";
+import ThemeSwitch from "./ThemeSwitch";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Header for every screen (spec 002): brand, a badge only when outcome
+ * emails need a decision, and the theme switch; then the four sections.
+ * The old momentum strip (scored-of-open, pips) was system internals.
+ */
 export default async function DashboardLayout({
   children,
   params,
@@ -16,46 +21,30 @@ export default async function DashboardLayout({
 }) {
   const { secret } = await params;
   const base = `/d/${secret}`;
-  const theme = (await cookies()).get("theme")?.value === "light" ? "light" : "dark";
-  const meta = await getQueueMeta();
-
-  // Five pips: a visible weekly target rather than a bare number, so progress
-  // reads at a glance instead of needing to be compared against memory.
-  const target = 5;
+  const cookie = (await cookies()).get("theme")?.value;
+  const theme = cookie === "light" || cookie === "dark" ? cookie : "system";
+  const snapshot = await getSnapshot();
+  const review = snapshot.data.review_pending ?? 0;
 
   logPage("layout");
   return (
-    <div className="wrap">
-      <header className="topbar">
-        <div className="topbar-row">
-          <Link href={base} className="brand">
-            <span className="brand-dot" />
-            job agent
-          </Link>
-          <Tabs base={base} />
-          <ThemeToggle initial={theme} />
-        </div>
-
-        <div className="momentum">
-          <span>
-            <b>{meta.appliedThisWeek}</b> applied this week
-          </span>
-          <span className="pips" aria-hidden="true">
-            {Array.from({ length: target }, (_, i) => (
-              <span key={i} className="pip" data-on={i < meta.appliedThisWeek} />
-            ))}
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>{meta.appliedTotal}</b> all time
-          </span>
-          <span className="sep">|</span>
-          <span>
-            <b>{meta.llmScored}</b> scored of <b>{meta.openJobs}</b> open
-          </span>
+    <div className="shell">
+      <header className="head">
+        <Link href={base} className="head-brand">
+          <span className="head-dot" aria-hidden="true" />
+          job agent
+        </Link>
+        <div className="head-right">
+          {review > 0 && (
+            <Link className="badge" href={`${base}/review`}
+                  aria-label={`${review} application email${review === 1 ? "" : "s"} to check`}>
+              {review} to check
+            </Link>
+          )}
+          <ThemeSwitch initial={theme} />
         </div>
       </header>
-
+      <Nav base={base} />
       {children}
     </div>
   );

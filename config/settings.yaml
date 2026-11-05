@@ -48,6 +48,18 @@ max_age_days: 3
 # Must be >= max_age_days, or scored jobs become unreachable. 0 disables.
 max_display_age_days: 5
 
+# Role families the dashboard shows by default (spec 002 FR-016, decided
+# 2026-11-05). JOBS starts on core + secondary; TODAY's "New for you" counts
+# them. Data science is classified as ml (common/role.py), so it is core.
+target_families:
+  core: [backend, genai, ml]
+  secondary: [platform, data, fullstack]
+
+# The operator's city. Matching rules live in common/geo.py (keywords fall
+# back to its list when absent here); `label` is only how screens name it.
+preferred_location:
+  label: Bengaluru
+
 # ---------------------------------------------------------------------------
 # LLM providers, tried in `priority` order. Every limit lives here — nothing is
 # hardcoded in score/providers.py.

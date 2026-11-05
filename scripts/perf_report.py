@@ -24,10 +24,13 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / ".env")
 OUT_DIR = ROOT / "specs" / "001-dashboard-speed-retention"
+
 DEFAULT_BASE = "https://job-agent-dashboard-three.vercel.app"
 
-PAGES = [("queue", ""), ("funnel", "/funnel"), ("contacts", "/contacts"),
-         ("companies", "/companies"), ("review", "/review")]
+# Spec 002 screens; "review" and "companies" have no /api/perf entry.
+PAGES = [("today", ""), ("jobs", "/jobs"), ("pipeline", "/pipeline"), ("people", "/people"),
+         ("health", "/health"), ("review", "/review"), ("companies", "/companies")]
+NO_BREAKDOWN = {"review", "companies"}
 
 
 def timed_get(url: str, headers: dict | None = None) -> tuple[float, float, int, requests.Response]:
@@ -49,6 +52,7 @@ def main() -> int:
     ap.add_argument("--label", required=True)
     ap.add_argument("--base", default=DEFAULT_BASE)
     ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--dir", default=str(OUT_DIR), help="where perf-<label>.md goes")
     args = ap.parse_args()
 
     secret = os.environ["DASHBOARD_SECRET"].strip()
@@ -66,7 +70,7 @@ def main() -> int:
         lines.append(f"| {name} | {r.status_code} | {region(r)} | "
                      f"{statistics.median(s[0] for s in samples):.2f} | "
                      f"{statistics.median(s[1] for s in samples):.2f} | {samples[-1][2] // 1024} |")
-        if name != "review":
+        if name not in NO_BREAKDOWN:
             pr = requests.get(f"{base}/api/perf?page={name}", headers=api_h, timeout=120)
             if pr.ok:
                 breakdowns.append((name, pr.json()))
@@ -86,7 +90,7 @@ def main() -> int:
             lines.append(f"| {q['ms']} | {q['started']} | {q['pages']} | {q['rows']} | `{q['name']}` |")
         lines.append("")
 
-    out = OUT_DIR / f"perf-{args.label}.md"
+    out = Path(args.dir) / f"perf-{args.label}.md"
     text = "\n".join(lines) + "\n"
     assert secret not in text, "secret leaked into the report"
     out.write_text(text, encoding="utf-8")

@@ -17,10 +17,12 @@ EXPECTED = {
     "hidden_by_age": int, "queue": dict, "new_24h": dict, "week": dict,
     "applied_total": int, "runs_24h": int, "inactive_boards": list,
     "providers_7d": list, "review_pending": int, "health": dict,
+    # v2 (0029, spec 002)
+    "in_progress": int, "ops": dict,
 }
 NESTED = {
     "queue": {"total": int, "by_family": dict},
-    "new_24h": {"total": int, "by_family": dict},
+    "new_24h": {"total": int, "by_family": dict, "by_source": dict},
     "week": {"applied": int, "responses": int, "referral_asks": int},
     "health": {"level": str, "reasons": list, "live_providers_24h": int},
 }

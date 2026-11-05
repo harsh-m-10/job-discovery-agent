@@ -263,6 +263,16 @@ def test_processing_twice_is_a_no_op():
     assert again == {}
 
 
+def test_an_assessment_email_moves_to_its_own_stage_with_a_next_step():
+    patch = next_status("applied", T0, None, [Event("assessment", T0 + timedelta(hours=2))])
+    assert patch["status"] == "assessment", patch
+    assert patch["next_step"] == "Complete the assessment"
+    # A next step Harsh already wrote is never overwritten.
+    patch = next_status("applied", T0, None, [Event("interview_invite", T0 + timedelta(hours=2))],
+                        next_step="Round 2 with the hiring manager")
+    assert patch["status"] == "interviewing" and "next_step" not in patch
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

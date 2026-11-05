@@ -164,7 +164,7 @@ export default async function JobPage({
             </section>
           )}
 
-          <section className="panel">
+          <section className="panel" id="referrals">
             <div className="panel-title">Referral contacts</div>
             {referrals.length === 0 ? (
               <div style={{ color: "var(--text-3)", fontSize: 13 }}>

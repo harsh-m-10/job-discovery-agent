@@ -43,7 +43,10 @@ RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
                   r"\bconversation(al)?\s+ai\b", r"\brag\b", r"\bprompt\b",
                   r"\bforward[\s-]deployed\b")),
     ("ml", _rx(r"\bmachine\s+learning\b", r"\bml\b", r"\bmlops\b",
-               r"\bdata\s+scien", r"\bdeep\s+learning\b", r"\bcomputer\s+vision\b",
+               # Data science is ML here (core, spec 002 FR-016), misspellings
+               # too: "Junior Data Scincetist" was filed as "other".
+               r"\bdata\s+sci", r"\b(applied|decision|research)\s+scientist",
+               r"\bdeep\s+learning\b", r"\bcomputer\s+vision\b",
                r"\binference\b", r"\bnlp\b", r"\bds\s*/\s*ml\b")),
     ("data", _rx(r"\bdata\s+(engineer|engineering|platform|integration|pipelines?|"
                  r"analyst|analytics|products?|warehouse|infrastructure)\b",

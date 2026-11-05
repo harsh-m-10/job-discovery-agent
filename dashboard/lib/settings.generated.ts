@@ -6,3 +6,9 @@
 export const PING_THRESHOLD: number = 6.5;
 /** settings.yaml: max_display_age_days */
 export const MAX_DISPLAY_AGE_DAYS: number = 5;
+/** settings.yaml: target_families.core */
+export const CORE_FAMILIES: readonly string[] = ["backend", "genai", "ml"];
+/** settings.yaml: target_families.secondary */
+export const SECONDARY_FAMILIES: readonly string[] = ["platform", "data", "fullstack"];
+/** settings.yaml: preferred_location.label (display only) */
+export const CITY_LABEL: string = "Bengaluru";

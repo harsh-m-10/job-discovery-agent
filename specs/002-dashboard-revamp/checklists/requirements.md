@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain — FR-016 (core vs secondary families)
+- [x] No [NEEDS CLARIFICATION] markers remain (FR-016 answered 2026-11-05)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,4 +31,4 @@
 
 ## Notes
 
-- Blocked on Q1 (FR-016) and on mockup approval (FR-015) before `speckit-plan`.
+- Q1 answered and mockup approved 2026-11-05; ready for planning.

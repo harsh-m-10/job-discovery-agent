@@ -1,127 +1,104 @@
-import { getQueue, getQueueMeta, getStatus } from "@/lib/queries";
+import Link from "next/link";
+import { cookies } from "next/headers";
 import { logPage } from "@/lib/perf";
-import { effectivePostedAt, formatAge, formatDayAge, hoursSince } from "@/lib/db";
-import QueueList from "./QueueList";
-import type { CardJob } from "./JobCard";
-import StatusStrip from "./StatusStrip";
-import Pager, { pageFrom } from "./Pager";
+import { getSnapshot } from "@/lib/queries";
+import { getInProgress, getNewSince } from "@/lib/screens";
+import { CITY_LABEL } from "@/lib/settings.generated";
+import HealthDot from "./HealthDot";
+import InProgressCard from "./InProgressCard";
+import MarkVisit from "./MarkVisit";
 
 export const dynamic = "force-dynamic";
 
-export default async function QueuePage({
-  params, searchParams,
-}: {
-  params: Promise<{ secret: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+function sinceLabel(iso: string, firstVisit: boolean): string {
+  if (firstVisit) return "in the last 24 hours";
+  const d = new Date(iso);
+  const opts = { timeZone: "Asia/Kolkata" } as const;
+  const today = new Date().toLocaleDateString("en-IN", opts);
+  const time = d.toLocaleTimeString("en-IN", { ...opts, hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString("en-IN", opts) === today
+    ? `since ${time} today`
+    : `since ${d.toLocaleDateString("en-IN", { ...opts, weekday: "short" })} ${time}`;
+}
+
+/**
+ * TODAY (spec 002 US1): what needs Harsh now, top to bottom: processes in
+ * flight, new matches since the last visit, this week, and the health dot.
+ */
+export default async function TodayPage({ params }: { params: Promise<{ secret: string }> }) {
   const { secret } = await params;
-  const page = pageFrom(await searchParams);
-  const [{ rows, hasMore }, meta, status] = await Promise.all([
-    getQueue(page), getQueueMeta(), getStatus(),
+  const base = `/d/${secret}`;
+  const raw = (await cookies()).get("seen_at")?.value;
+  const seen = raw ? new Date(decodeURIComponent(raw)) : null;
+  const firstVisit = !seen || Number.isNaN(seen.getTime());
+  const since = firstVisit ? new Date(Date.now() - 86_400_000).toISOString() : seen!.toISOString();
+
+  const [snapshot, inProgress, fresh] = await Promise.all([
+    getSnapshot(), getInProgress(), getNewSince(since),
   ]);
+  const week = snapshot.data.week;
 
-  const jobs: CardJob[] = rows.map((row) => {
-    const posted = effectivePostedAt(row);
-    const ageHours = hoursSince(posted);
-    return {
-      job_id: row.job_id,
-      title: row.title,
-      company: row.company,
-      location: row.location,
-      absolute_url: row.absolute_url,
-      compensation: row.compensation,
-      headcountBand: row.headcount_band,
-      fit_score: row.fit_score,
-      min_years: row.min_years,
-      max_years: row.max_years,
-      matched_skills: row.matched_skills,
-      gap_skills: row.gap_skills,
-      reasoning: row.reasoning,
-      ageHours,
-      ageLabel: row.posted_at_precision === "date"
-        ? formatDayAge(ageHours) : formatAge(ageHours),
-      datedFromSighting: !row.posted_at,
-      datedToDay: row.posted_at_precision === "date",
-      provisional: row.provisional,
-      referrals: row.referrals,
-    };
-  });
-
-  logPage("queue");
+  logPage("today");
   return (
     <>
-      <StatusStrip status={status} />
+      <MarkVisit />
 
-      {/* An empty queue and an unfinished scoring pass look identical without
-          this. The distinction matters daily: one means "nothing today", the
-          other means "the pipeline stalled and you are flying blind". */}
-      {meta.unscored > 0 && (
-        <div className="banner">
-          <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 8v5M12 16.5v.01" />
-          </svg>
-          <div>
-            <b>{meta.unscored} of {meta.openJobs} postings are not scored yet</b> — this
-            queue is incomplete, not empty. The next pipeline run scores them;
-            to do it now, run <code>python -m score.run</code>. If that stalls,{" "}
-            <code>python -m score.healthcheck</code> shows which providers are
-            answering — the mix in the status line above shows which one has
-            actually been doing the work.
-          </div>
+      <section className="sec" aria-labelledby="inprog">
+        <div className="sec-head">
+          <h2 id="inprog">In progress</h2>
+          <span className="sec-note">{inProgress.length} live</span>
         </div>
-      )}
+        {inProgress.length === 0 ? (
+          <div className="empty-line">Nothing in progress. Replies and interviews show up here.</div>
+        ) : (
+          inProgress.map((item) => <InProgressCard key={item.job_id} item={item} secret={secret} />)
+        )}
+      </section>
 
-      {/* Same reasoning as the banner above: a queue that quietly shrank from
-          62 to 12 reads as a broken pipeline. Say what was suppressed and how
-          to see it. */}
-      {meta.hiddenByAge > 0 && (
-        <div className="banner">
-          <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M12 7v5l3 2" />
-          </svg>
-          <div>
-            <b>{meta.hiddenByAge} match(es) hidden — posted more than{" "}
-            {meta.maxAgeDays} days ago.</b> They are still scored and stored, just
-            kept out of the queue. Change <code>max_display_age_days</code> in{" "}
-            <code>config/settings.yaml</code> to widen the window (0 shows
-            everything), then run <code>python scripts/gen_dashboard_settings.py</code>.
-          </div>
+      <section className="sec" aria-labelledby="newforyou">
+        <div className="sec-head">
+          <h2 id="newforyou">New for you</h2>
+          <span className="sec-note">{sinceLabel(since, firstVisit)}</span>
         </div>
-      )}
+        {fresh.count === 0 ? (
+          <div className="empty-line">Nothing new since your last visit.</div>
+        ) : (
+          <>
+            <div className="big-count">
+              <b>{fresh.count === 50 ? "50+" : fresh.count}</b>
+              <span>new {fresh.count === 1 ? "match" : "matches"} in {CITY_LABEL},<br />core and secondary roles</span>
+            </div>
+            <div className="list">
+              {fresh.items.map((j) => (
+                <Link key={j.job_id} className="list-row" href={`${base}/j/${j.job_id}`}>
+                  <span className="score" data-high={(j.score ?? 0) >= 8}>{j.score?.toFixed(1)}</span>
+                  <span className="list-main">
+                    <span className="list-title">{j.title}</span>
+                    <span className="list-sub">{j.company} · {j.ageLabel}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+            <Link href={`${base}/jobs`} className="sec-note" style={{ fontWeight: 600, color: "var(--accent-text)", minHeight: 44, display: "flex", alignItems: "center" }}>
+              See all jobs →
+            </Link>
+          </>
+        )}
+      </section>
 
-      {meta.stranded > 0 && (
-        <div className="banner" data-kind="error">
-          <svg className="banner-icon" width="15" height="15" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-            <path d="M12 9v4M12 17v.01" />
-            <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
-          </svg>
-          <div>
-            <b>{meta.stranded} job(s) failed to score — every LLM provider refused.</b>{" "}
-            These are not in the queue and an ordinary run will not pick them up.
-            Check provider health with <code>python -m score.healthcheck</code>,
-            then recover with <code>python -m score.run --retry-failed</code>.
-          </div>
+      <section className="sec" aria-labelledby="week">
+        <div className="sec-head">
+          <h2 id="week">This week</h2>
+          <span className="sec-note">last 7 days</span>
         </div>
-      )}
+        <div className="grid3">
+          <div className="tile"><b>{week.applied}</b><span>Applied</span></div>
+          <div className="tile"><b>{week.responses}</b><span>Responses</span></div>
+          <div className="tile"><b>{week.referral_asks}</b><span>Referral asks</span></div>
+        </div>
+      </section>
 
-      {jobs.length === 0 ? (
-        <div className="empty">
-          <div className="big">◦</div>
-          {meta.unscored > 0
-            ? "Nothing scored above threshold yet — finish the scoring pass above."
-            : "Queue is clear. Every scored posting has been actioned."}
-        </div>
-      ) : (
-        <>
-          <QueueList jobs={jobs} secret={secret} />
-          <Pager page={page} hasMore={hasMore} href={(n) => `/d/${secret}?p=${n}`} />
-        </>
-      )}
+      <HealthDot snapshot={snapshot} base={base} />
     </>
   );
 }

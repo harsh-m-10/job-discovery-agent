@@ -132,6 +132,9 @@ def main() -> int:
 
     for pattern in ("*.ts", "*.tsx"):
         for path in DASHBOARD.rglob(pattern):
+            # Generated from config/settings.yaml (display labels, not logic).
+            if path.name == "settings.generated.ts":
+                continue
             if SKIP_DIRS & set(path.parts):
                 continue
             text = path.read_text(encoding="utf-8", errors="replace")
