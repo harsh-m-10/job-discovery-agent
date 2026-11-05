@@ -42,6 +42,12 @@ STRONG_REJECTION = _rx(
     r"\bnot (a|the right) (match|fit) for (this|the) (role|position)\b",
     r"\b(will|would) not be (offering|extending)\b",
     r"\bdecline(d)? (your|the) application\b",
+    # Nasdaq, 2026-11-04: "unfortunately, we won’t be able to invite you to
+    # the next round" -- a curly apostrophe, and "invite"/"next round" read as
+    # an interview.
+    r"\b(won['’]?t|will not|are not|aren['’]?t|not) (be )?able to "
+    r"(invite|offer|move|proceed|progress|consider) you\b",
+    r"\bunable to (invite|progress|move) you\b",
 )
 
 CONDITIONAL = _rx(
@@ -51,6 +57,10 @@ CONDITIONAL = _rx(
     r"(match|be a match|meet|be selected)",
     r"\bwe will (be in touch|reach out|contact you|get back to you) (if|should|when)",
     r"\bif (we|there is a) (match|fit|wish to proceed|would like to proceed)",
+    # Bureau (Ashby), 2026-09-22: "will be in touch with you if we would like
+    # to schedule an interview" -- a receipt that became a fake interview.
+    r"\b(be in touch|reach out|contact you|get back to you)( with you)? (if|should|when)\b",
+    r"\bif we (would like|wish|want|decide) to (schedule|proceed|move|invite)",
 )
 
 ASSESSMENT = _rx(

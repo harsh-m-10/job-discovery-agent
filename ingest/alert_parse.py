@@ -28,7 +28,9 @@ from html.parser import HTMLParser
 JOB_LINK = re.compile(
     r"(?P<li>linkedin\.com/(?:comm/)?jobs/view/(?P<li_id>\d+))"
     r"|(?P<in>indeed\.[a-z.]+/[^\s\"'<>]*?[?&]jk=(?P<in_id>[0-9a-f]{8,}))"
-    r"|(?P<nk>naukri\.com/job-listings-[^\s\"'<>?]*?-(?P<nk_id>\d{6,}))",
+    # Real Naukri alerts (first seen 2026-10-22) link /jd/job-listings-...;
+    # without the optional /jd/ all 11 of them parsed to zero postings.
+    r"|(?P<nk>naukri\.com/(?:jd/)?job-listings-[^\s\"'<>?]*?-(?P<nk_id>\d{6,}))",
     re.I,
 )
 URL = re.compile(r"https?://[^\s\"'<>]+", re.I)
@@ -163,6 +165,8 @@ def _parse_html(body: str) -> list[AlertJob]:
         if key in out or not title:
             continue
         company, location = _company_location([l for l in lines if l != title])
+        if site == "naukri":
+            location = _naukri_full_location(location, m.group(0))
         if company:
             out[key] = AlertJob(site, job_id, title, company, location,
                                 clean_url(url, site, job_id))
@@ -197,6 +201,21 @@ def _parse_text(body: str) -> list[AlertJob]:
                 out[(site, job_id)] = AlertJob(site, job_id, title, company, location,
                                                clean_url(u, site, job_id))
     return list(out.values())
+
+
+def _naukri_full_location(location: str, link: str) -> str:
+    """Naukri cuts locations short ("Hybrid - Bengalur...", "Pune, Be...").
+    Its link slug spells every city out (...-pune-bengaluru-3-to-5-years-<id>),
+    so a truncated location gets the Indian place names from the slug."""
+    if not location.endswith("..."):
+        return location
+    from common.geo import india_pattern
+    places: list[str] = []
+    for hit in india_pattern().findall(link.replace("-", " ")):
+        name = hit if isinstance(hit, str) else next((h for h in hit if h), "")
+        if name and name.lower() not in (p.lower() for p in places):
+            places.append(name.title())
+    return f"{location} ({', '.join(places)})" if places else location
 
 
 def _company_location(lines: list[str]) -> tuple[str, str]:

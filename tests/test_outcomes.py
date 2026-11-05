@@ -37,6 +37,10 @@ CASES = {
         ("Software Engineer - Glean", "We wanted to let you know the position has been filled."),
         ("Re: SDE II", "We regret to inform you that you have not been selected for the next stage."),
         ("Application status", "Unfortunately your application was unsuccessful."),
+        # Nasdaq, 2026-11-04, was read as an interview ("invite", "next round").
+        ("Specialist- AI Engineering and Automation at Nasdaq", "We received a large number of "
+         "qualified applications, and after carefully reviewing all of them, unfortunately, we "
+         "won’t be able to invite you to the next round of our hiring process."),
     ],
     "acknowledgement": [
         ("Thank you for applying to Razorpay!", "We have received your application for Backend "
@@ -44,6 +48,10 @@ CASES = {
          "schedule an interview."),
         ("We received your application", "Thanks for applying to Sarvam AI."),
         ("Application submitted", "Your application for Data Engineer has been received."),
+        # Bureau (Ashby), 2026-09-22, was read as an interview.
+        ("Thank you for applying for Data Engineer at Bureau", "We will review your "
+         "qualifications and experience and will be in touch with you if we would like to "
+         "schedule an interview."),
     ],
     "assessment": [
         ("Next step: HackerRank assessment", "Please complete the coding challenge within 5 days."),

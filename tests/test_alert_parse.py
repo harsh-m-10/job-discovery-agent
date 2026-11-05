@@ -95,6 +95,20 @@ def test_naukri_html():
     assert jobs[0].site == "naukri" and "?" not in jobs[0].url
 
 
+def test_naukri_real_template_jd_link_and_truncated_location():
+    # The live template (2026-10-22 on): /jd/job-listings-... links and
+    # locations cut to "Hybrid - Pune, Be...".
+    link = ("https://www.naukri.com/jd/job-listings-ai-ml-professionals-hatchtra-innotech-"
+            "pune-bengaluru-3-to-5-years-311025009876?src=jobalert")
+    body = f"""<html><body><table>
+<tr><td><a href="{link}">AI/ML Professionals</a></td></tr>
+<tr><td>Hatchtra Innotech</td></tr><tr><td>Hybrid - Pune, Be...</td></tr>
+</table></body></html>"""
+    [j] = parse("Naukri <naukrialerts@naukri.com>", "Handpicked New Jobs for you", body)
+    assert j.site_job_id == "311025009876" and j.company == "Hatchtra Innotech", j
+    assert j.location == "Hybrid - Pune, Be... (Pune, Bengaluru)", j.location
+
+
 def test_a_mail_with_no_job_links_yields_nothing():
     assert parse("x@linkedin.com", "Your weekly digest", "<html><a href='https://www.linkedin.com/feed'>Feed</a></html>") == []
     assert parse("x", "y", "") == []
