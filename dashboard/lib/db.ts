@@ -1,4 +1,5 @@
 import "server-only";
+import { record } from "./perf";
 
 /**
  * PostgREST access. Server-side only.
@@ -70,6 +71,7 @@ export function stableOrder(table: string, query: string): string {
 export async function select<T = any>(table: string, query: string): Promise<T[]> {
   query = stableOrder(table, query);
   const rows: T[] = [];
+  const t0 = performance.now();
   for (let page = 0; page < MAX_PAGES; page++) {
     const offset = page * PAGE;
     const res = await fetch(`${URL_BASE}/rest/v1/${table}?${query}`, {
@@ -82,7 +84,10 @@ export async function select<T = any>(table: string, query: string): Promise<T[]
     if (!res.ok) throw new Error(`select ${table}: ${res.status} ${await res.text()}`);
     const batch = (await res.json()) as T[];
     rows.push(...batch);
-    if (batch.length < PAGE) return rows;
+    if (batch.length < PAGE) {
+      record(`${table}?${query}`, t0, page + 1, rows.length);
+      return rows;
+    }
   }
   throw new Error(
     `select ${table}: still returning full pages after ${MAX_PAGES * PAGE} rows — ` +

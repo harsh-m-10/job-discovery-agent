@@ -1,4 +1,5 @@
 import { getFunnel, type Bucket } from "@/lib/queries";
+import { logPage } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,7 @@ export default async function FunnelPage() {
   const overall = pct(f.totals.applied, f.totals.responded);
   const cal = f.calibration;
 
+  logPage("funnel");
   return (
     <>
       <section className="panel">

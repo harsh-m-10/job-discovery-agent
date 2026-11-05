@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { logPage } from "@/lib/perf";
 import { notFound } from "next/navigation";
 import { getJob } from "@/lib/queries";
 import { effectivePostedAt, formatAge, hoursSince } from "@/lib/db";
@@ -62,6 +63,7 @@ export default async function JobPage({
   const company = job.companies?.name ?? "";
   const tier = tierOf(score?.fit_score ?? null);
 
+  logPage("job");
   return (
     <>
       <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 16 }}>

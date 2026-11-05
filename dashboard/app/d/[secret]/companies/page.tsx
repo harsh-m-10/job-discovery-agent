@@ -1,4 +1,5 @@
 import { getCompanies } from "@/lib/queries";
+import { logPage } from "@/lib/perf";
 import { formatAge, hoursSince } from "@/lib/db";
 import CompanyToggle from "./CompanyToggle";
 
@@ -22,6 +23,7 @@ export default async function CompaniesPage({
   const active = companies.filter((c) => c.active).length;
   const failing = companies.filter((c) => c.consecutive_failures > 0);
 
+  logPage("companies");
   return (
     <>
       <section className="panel">

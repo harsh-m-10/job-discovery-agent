@@ -1,4 +1,5 @@
 import { getQueue, getQueueMeta, getStatus } from "@/lib/queries";
+import { logPage } from "@/lib/perf";
 import { effectivePostedAt, formatAge, formatDayAge, hoursSince } from "@/lib/db";
 import QueueList from "./QueueList";
 import type { CardJob } from "./JobCard";
@@ -43,6 +44,7 @@ export default async function QueuePage({
     };
   });
 
+  logPage("queue");
   return (
     <>
       <StatusStrip status={status} />

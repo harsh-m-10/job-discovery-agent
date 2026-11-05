@@ -1,4 +1,5 @@
 import { select } from "@/lib/db";
+import { logPage } from "@/lib/perf";
 import ResolveEvent from "./ResolveEvent";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,7 @@ export default async function ReviewPage({ params }: { params: Promise<{ secret:
   const byId = new Map(options.map((o) => [o.id, o]));
   const matched = recent.filter((r) => r.match_state === "matched").length;
 
+  logPage("review");
   return (
     <>
       <section className="panel">

@@ -1,4 +1,5 @@
 import { getContacts } from "@/lib/queries";
+import { logPage } from "@/lib/perf";
 import WarmToggle from "../WarmToggle";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function ContactsPage({
   const total = groups.reduce((n, g) => n + g.contacts.length, 0);
   const warm = groups.reduce((n, g) => n + g.contacts.filter((c) => c.warm).length, 0);
 
+  logPage("contacts");
   return (
     <>
       <section className="panel">

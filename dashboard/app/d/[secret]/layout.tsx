@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { logPage } from "@/lib/perf";
 import { cookies } from "next/headers";
 import { getQueueMeta } from "@/lib/queries";
 import ThemeToggle from "./ThemeToggle";
@@ -22,6 +23,7 @@ export default async function DashboardLayout({
   // reads at a glance instead of needing to be compared against memory.
   const target = 5;
 
+  logPage("layout");
   return (
     <div className="wrap">
       <header className="topbar">
