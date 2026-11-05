@@ -52,3 +52,6 @@ apps_script/.clasp.json
 # people who never agreed to be here; this repository is public.
 *.xlsx
 *.xls
+
+# Claude Code per-machine permissions
+.claude/settings.local.json
