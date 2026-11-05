@@ -110,9 +110,11 @@ llm_providers:
   # separate video-generation project, and Groq's free limits are per account,
   # so the two compete for one budget. Kept configured, not deleted — flip
   # `enabled` back to true if the other project ever moves off it.
+  # Model swapped 2026-11-05 (still disabled): llama-3.3-70b-versatile now
+  # answers 404 "does not exist"; openai/gpt-oss-120b scored a probe in 1.3s.
   - name: groq
     priority: 7
-    model: llama-3.3-70b-versatile
+    model: openai/gpt-oss-120b
     base_url: https://api.groq.com/openai/v1
     api_key_env: GROQ_API_KEY
     rpm: 30
@@ -139,7 +141,9 @@ llm_providers:
     max_chars: 2000
     max_output_tokens_per_job: 320
     json_mode: true
-    enabled: true
+    # Disabled 2026-11-05: still 402 "payment required" two months on, so it
+    # only cost a failed request at the end of every exhausted chain.
+    enabled: false
 
   # --- added after measuring every candidate against a real 8,040-token
   # payload (5 jobs). Ordered by measured latency, not by vendor reputation.
@@ -193,8 +197,11 @@ llm_providers:
     # measured to score a fixture batch correctly. Same model as
     # `nvidia`; its thinking length varies, so it gets the same budget. The output ceiling is
     # min(4096, per_job x batch + 200), hence the small batch.
+    # Model swapped 2026-11-05: the free nemotron-3-super is gone from
+    # OpenRouter (404 "unavailable for free"); nemotron-3-ultra:free scored a
+    # probe in 9.3s with valid JSON.
     priority: 5
-    model: nvidia/nemotron-3-super-120b-a12b:free   # 15.0s, 5/5
+    model: nvidia/nemotron-3-ultra-550b-a55b:free
     base_url: https://openrouter.ai/api/v1
     api_key_env: OPENROUTER_API_KEY
     rpm: 15                            # free models are rate-limited hard
@@ -219,8 +226,11 @@ llm_providers:
     # Found by `score.healthcheck --deep` on 2026-10-15; these values were
     # measured to score a fixture batch correctly. The output ceiling is
     # min(4096, per_job x batch + 200), hence the small batch.
+    # Model swapped again 2026-11-05: nemotron-3-super is still listed but
+    # every call answers 404 "Function not found" (11 of 11 that day).
+    # nemotron-3-ultra answered a probe in 8.5s with valid JSON.
     priority: 2
-    model: nvidia/nemotron-3-super-120b-a12b   # 5.3s, valid JSON
+    model: nvidia/nemotron-3-ultra-550b-a55b
     base_url: https://integrate.api.nvidia.com/v1
     api_key_env: NVIDIA_API_KEY
     rpm: 30
