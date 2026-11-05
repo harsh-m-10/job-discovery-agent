@@ -96,6 +96,32 @@ export async function select<T = any>(table: string, query: string): Promise<T[]
   );
 }
 
+/**
+ * One page of a list (spec 001 FR-007): rows [offset, offset + limit) under a
+ * stable order, in a single request. Asks for one extra row so the caller
+ * knows whether a next page exists without a count over the table (FR-005).
+ */
+export async function selectPage<T = any>(
+  table: string, query: string, offset: number, limit: number,
+): Promise<{ rows: T[]; hasMore: boolean }> {
+  query = stableOrder(table, query);
+  const t0 = performance.now();
+  const res = await fetch(`${URL_BASE}/rest/v1/${table}?${query}`, {
+    headers: headers({ "Range-Unit": "items", Range: `${offset}-${offset + limit}` }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`select ${table}: ${res.status} ${await res.text()}`);
+  const batch = (await res.json()) as T[];
+  record(`${table}?${query}`, t0, 1, batch.length);
+  return { rows: batch.slice(0, limit), hasMore: batch.length > limit };
+}
+
+/** Quote values for a PostgREST in.(…) filter: company keys can hold
+ *  commas, "&", "#" or "+". */
+export function inList(values: string[]): string {
+  return encodeURIComponent(values.map((v) => `"${v.replace(/"/g, "")}"`).join(","));
+}
+
 export async function upsert(table: string, rows: unknown[], onConflict: string) {
   const res = await fetch(
     `${URL_BASE}/rest/v1/${table}?on_conflict=${onConflict}`,

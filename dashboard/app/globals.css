@@ -565,3 +565,10 @@ button.warm-on {
   border-color: var(--good, #2e7d32);
   color: var(--good, #2e7d32);
 }
+
+/* Prev / Next under paginated lists (spec 001 FR-007). */
+.pager {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin: 16px 0 8px;
+}
+.pager-n { color: var(--muted, #888); font-size: 13px; }

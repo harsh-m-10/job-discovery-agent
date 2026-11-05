@@ -1,5 +1,6 @@
 import "server-only";
-import { select, effectivePostedAt, hoursSince, type QueueRow } from "./db";
+import { cache } from "react";
+import { select, selectPage, inList, effectivePostedAt, hoursSince, type QueueRow } from "./db";
 import { MAX_DISPLAY_AGE_DAYS, PING_THRESHOLD } from "./settings.generated";
 
 // Both thresholds come from config/settings.yaml via settings.generated.ts
@@ -71,7 +72,10 @@ export type Application = {
   notes: string | null;
 };
 
-async function referralIndex() {
+/** Contacts at these companies only (it used to read all 1,118 per view). */
+async function referralIndex(keys: string[]) {
+  const wanted = [...new Set(keys.filter(Boolean))];
+  if (wanted.length === 0) return new Map<string, never[]>();
   const contacts = await select<{
     id: number; full_name: string; company_norm: string | null;
     title: string | null; is_batchmate: boolean | null; profile_url: string | null;
@@ -82,6 +86,7 @@ async function referralIndex() {
     // year is only a tiebreaker after that. The presentation half of
     // score/referral.py:rank_matches, which also weighs title fit.
     "select=id,full_name,company_norm,title,is_batchmate,profile_url,warm" +
+      `&company_norm=in.(${inList(wanted)})` +
       "&order=warm.desc,is_batchmate.desc.nullslast,near_batch.desc,connected_on.desc.nullslast",
   );
 
@@ -122,19 +127,26 @@ type QueueViewRow = {
   reasoning: string | null; status: string;
 };
 
-export async function getQueue(): Promise<QueueRow[]> {
-  // The view does the join, the status default and the age; this asks for
-  // exactly the rows the queue shows. It used to read every open job (4,200+,
-  // five pages) to join against a few hundred scores (docs/PLAN.md 8.1).
+export const QUEUE_PAGE = 25;
+
+/** Columns the queue card shows; never the description (spec 001 FR-006). */
+const QUEUE_FIELDS =
+  "job_id,title,location,absolute_url,compensation,posted_at,posted_at_precision," +
+  "first_seen_at,company,headcount_band,company_key,fit_score,verdict,provisional," +
+  "min_years,max_years,matched_skills,gap_skills,reasoning,status";
+
+export async function getQueue(page = 1): Promise<{ rows: QueueRow[]; hasMore: boolean }> {
+  // The view does the join, the status default and the age; one page of 25,
+  // best first (spec 001 FR-007).
   const ageFilter = MAX_AGE_DAYS > 0 ? `&age_days=lte.${MAX_AGE_DAYS}` : "";
-  const [rowsFromView, referrals] = await Promise.all([
-    select<QueueViewRow>(
-      "v_queue",
-      // location_ok: the operator's city, kept by score/run.py (migration 0019).
-      `select=*&fit_score=gte.${THRESHOLD}&status=eq.queued&location_ok=is.true${ageFilter}`,
-    ),
-    referralIndex(),
-  ]);
+  const { rows: rowsFromView, hasMore } = await selectPage<QueueViewRow>(
+    "v_queue",
+    // location_ok: the operator's city, kept by score/run.py (migration 0019).
+    `select=${QUEUE_FIELDS}&fit_score=gte.${THRESHOLD}&status=eq.queued&location_ok=is.true` +
+      `${ageFilter}&order=fit_score.desc,job_id.asc`,
+    (Math.max(1, page) - 1) * QUEUE_PAGE, QUEUE_PAGE,
+  );
+  const referrals = await referralIndex(rowsFromView.map((v) => v.company_key ?? ""));
 
   const rows: QueueRow[] = [];
   for (const v of rowsFromView) {
@@ -169,58 +181,54 @@ export async function getQueue(): Promise<QueueRow[]> {
     });
   }
 
-  rows.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
-  return rows;
+  return { rows, hasMore };
 }
 
+// --- snapshot (db/migrations/0026) ---------------------------------------
+
+export type SnapshotData = {
+  open_jobs: number; unscored: number; stranded: number; llm_scored: number;
+  hidden_by_age: number; max_age_days: number; threshold: number;
+  queue: { total: number; by_family: Record<string, number> };
+  new_24h: { total: number; by_family: Record<string, number> };
+  week: { applied: number; responses: number; referral_asks: number };
+  applied_total: number; runs_24h: number; inactive_boards: string[];
+  providers_7d: { provider: string; count: number }[]; review_pending: number;
+  last_run: RunRow | null;
+  health: { level: "green" | "amber" | "red"; reasons: string[]; live_providers_24h: number };
+};
+
+export type Snapshot = { computedAt: string; ageMinutes: number; data: SnapshotData };
+
 /**
- * Header numbers for the queue.
- *
- * `unscored` is the important one: an empty queue because nothing scored well
- * and an empty queue because scoring never finished look identical otherwise,
- * and the second silently looks like "no jobs today".
+ * Every headline number, computed in Postgres at the end of each ingest run.
+ * The dashboard used to compute these itself from every open job and every
+ * score: 22 sequential page fetches per call, twice per view (spec 001
+ * perf-baseline.md). cache(): the layout and the page share one read.
  */
-export async function getQueueMeta() {
-  const [jobs, scores, apps] = await Promise.all([
-    select<{ id: number; posted_at: string | null; first_seen_at: string }>(
-      "jobs", "select=id,posted_at,first_seen_at&closed_at=is.null",
-    ),
-    select<{ job_id: number; fit_score: number | null; reject_reason: string | null }>(
-      "job_scores", "select=job_id,fit_score,reject_reason",
-    ),
-    select<{ applied_at: string | null }>(
-      "applications", "select=applied_at&applied_at=not.is.null",
-    ),
-  ]);
-
-  const scoredIds = new Set(scores.map((s) => s.job_id));
-  const weekAgo = Date.now() - 7 * 86_400_000;
-
-  // Above threshold but suppressed for age. Reported rather than dropped
-  // silently: a queue that shrank from 62 to 12 with no explanation reads as a
-  // broken pipeline, which is the same failure `unscored` exists to prevent.
-  const overThreshold = new Set(
-    scores.filter((s) => s.fit_score !== null && Number(s.fit_score) >= THRESHOLD)
-      .map((s) => s.job_id),
-  );
-  const hiddenByAge = jobs.filter(
-    (j) => overThreshold.has(j.id) && tooOld(j),
-  ).length;
-
+export const getSnapshot = cache(async (): Promise<Snapshot> => {
+  const [row] = await select<{ computed_at: string; data: SnapshotData }>(
+    "dashboard_snapshot", "select=computed_at,data&id=eq.1");
+  if (!row) throw new Error("dashboard_snapshot is empty: run scripts/refresh_snapshot.py");
   return {
-    openJobs: jobs.length,
-    hiddenByAge,
-    maxAgeDays: MAX_AGE_DAYS,
-    unscored: jobs.filter((j) => !scoredIds.has(j.id)).length,
-    // Jobs the LLM never got to because every provider refused. Distinct from
-    // "not scored yet": these will not be retried by an ordinary run.
-    stranded: scores.filter((s) =>
-      (s.reject_reason ?? "").startsWith("scoring_failed")).length,
-    llmScored: scores.filter((s) => s.fit_score !== null).length,
-    appliedThisWeek: apps.filter(
-      (a) => a.applied_at && new Date(a.applied_at).getTime() >= weekAgo,
-    ).length,
-    appliedTotal: apps.length,
+    computedAt: row.computed_at,
+    ageMinutes: (Date.now() - new Date(row.computed_at).getTime()) / 60_000,
+    data: row.data,
+  };
+});
+
+/** Header numbers for the queue, from the snapshot. */
+export async function getQueueMeta() {
+  const { data } = await getSnapshot();
+  return {
+    openJobs: data.open_jobs,
+    hiddenByAge: data.hidden_by_age,
+    maxAgeDays: data.max_age_days,
+    unscored: data.unscored,
+    stranded: data.stranded,
+    llmScored: data.llm_scored,
+    appliedThisWeek: data.week.applied,
+    appliedTotal: data.applied_total,
   };
 }
 
@@ -270,56 +278,23 @@ const PROVIDER_MIX_DAYS = 7;
  * the bug notify/alerts.py:_since already documents.
  */
 export async function getStatus(): Promise<PipelineStatus> {
-  const dayAgo = new Date(Date.now() - 86_400_000).toISOString();
-  const mixSince = new Date(Date.now() - PROVIDER_MIX_DAYS * 86_400_000).toISOString();
-
-  const [latest, recent, inactive, scored] = await Promise.all([
-    select<RunRow>(
-      "run_log",
-      "select=started_at,finished_at,jobs_seen,jobs_new,jobs_closed," +
-        "trigger_source,duration_s,boards&worker=eq.ingest" +
-        "&order=started_at.desc&limit=1",
-    ),
-    select<{ started_at: string }>(
-      "run_log", `select=started_at&worker=eq.ingest&started_at=gte.${dayAgo}`,
-    ),
-    select<{ name: string }>("companies", "select=name&active=is.false&order=name.asc"),
-    select<{ provider: string | null }>(
-      "job_scores",
-      `select=provider&fit_score=not.is.null&scored_at=gte.${mixSince}`,
-    ),
-  ]);
-
-  const lastRun = latest[0] ?? null;
-  const failingBoards = (lastRun?.boards ?? [])
-    .filter((b) => b.error)
-    .map((b) => ({
-      label: `${b.company} (${b.ats})`,
-      error: b.error ?? "",
-      transient: Boolean(b.transient),
-    }));
-
-  const mix = new Map<string, number>();
-  for (const s of scored) {
-    const key = s.provider ?? "unrecorded";
-    mix.set(key, (mix.get(key) ?? 0) + 1);
-  }
-
+  const { data } = await getSnapshot();
+  const lastRun = data.last_run;
   return {
     lastRun,
     lastRunAgeHours: lastRun ? hoursSince(new Date(lastRun.started_at)) : null,
-    runsLast24h: recent.length,
-    failingBoards,
-    inactiveBoards: inactive.map((c) => c.name),
-    providerMix: [...mix.entries()]
-      .map(([provider, count]) => ({ provider, count }))
-      .sort((a, b) => b.count - a.count),
+    runsLast24h: data.runs_24h,
+    failingBoards: (lastRun?.boards ?? []).filter((b) => b.error).map((b) => ({
+      label: `${b.company} (${b.ats})`, error: b.error ?? "", transient: Boolean(b.transient),
+    })),
+    inactiveBoards: data.inactive_boards,
+    providerMix: data.providers_7d,
     providerMixDays: PROVIDER_MIX_DAYS,
   };
 }
 
 export async function getJob(jobId: number) {
-  const [jobs, scores, apps, referrals] = await Promise.all([
+  const [jobs, scores, apps, asks] = await Promise.all([
     select<JobRow & {
       description: string | null; ats_job_id: string; closed_at: string | null;
     }>(
@@ -331,13 +306,13 @@ export async function getJob(jobId: number) {
       "job_scores", `select=*&job_id=eq.${jobId}`,
     ),
     select<Application>("applications", `select=*&job_id=eq.${jobId}`),
-    referralIndex(),
+    select<ReferralAsk>(
+      "referral_asks", `select=id,contact_id,asked_at,replied_at,outcome&job_id=eq.${jobId}`,
+    ).catch(() => [] as ReferralAsk[]),   // tolerate the table predating 0011
   ]);
   const job = jobs[0];
   if (!job) return null;
-  const asks = await select<ReferralAsk>(
-    "referral_asks", `select=id,contact_id,asked_at,replied_at,outcome&job_id=eq.${jobId}`,
-  ).catch(() => [] as ReferralAsk[]);   // tolerate the table predating 0011
+  const referrals = await referralIndex([job.companies?.company_key ?? ""]);
   return {
     job,
     score: scores[0] ?? null,
@@ -441,15 +416,20 @@ export async function getFunnel() {
   // latency stages (docs/PLAN.md 3.4/4.5). Scores are still read directly for
   // the calibration and skill-gap panels, which are about scoring, not
   // applications.
-  const [apps, scores, open] = await Promise.all([
+  // One concurrent batch (spec 001 FR-008). Scores: only LLM-scored rows from
+  // the last 30 days, the window both panels use -- it read all 11,500.
+  const monthAgoIso = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const [apps, scores, snap, asks, contactKeys, companyKeys] = await Promise.all([
     select<FunnelRow>("v_funnel", "select=*"),
     select<ScoreRow & { scored_at: string }>(
       "job_scores",
-      "select=job_id,fit_score,min_years,gap_skills,scored_at",
+      `select=job_id,fit_score,gap_skills,scored_at&fit_score=not.is.null&scored_at=gte.${monthAgoIso}`,
     ),
-    // Was every job ever seen, so "OPEN TRACKED" showed ~4,400 instead of the
-    // ~2,300 actually open.
-    select<{ id: number }>("jobs", "select=id&closed_at=is.null"),
+    getSnapshot(),
+    select<{ outcome: string | null }>("referral_asks", "select=outcome")
+      .catch(() => [] as { outcome: string | null }[]),
+    select<{ company_norm: string | null }>("connections", "select=company_norm"),
+    select<{ company_key: string | null }>("companies", "select=company_key&company_key=not.is.null"),
   ]);
 
   const applied = apps.filter((a) => a.applied_at !== null);
@@ -514,8 +494,6 @@ export async function getFunnel() {
   );
   // Referral funnel (PLAN 5.4): asks -> replies -> referred -> applied via
   // referral -> interviews among those.
-  const asks = await select<{ outcome: string | null }>("referral_asks", "select=outcome")
-    .catch(() => [] as { outcome: string | null }[]);
   const viaReferral = applied.filter((a) => a.via_referral);
   const referral: OutcomeStage[] = [
     { label: "asked", n: asks.length },
@@ -526,10 +504,6 @@ export async function getFunnel() {
   ];
   // How much of the network the roster can reach at all: contacts whose
   // employer is a tracked company. The ceiling on everything above.
-  const [contactKeys, companyKeys] = await Promise.all([
-    select<{ company_norm: string | null }>("connections", "select=company_norm"),
-    select<{ company_key: string | null }>("companies", "select=company_key"),
-  ]);
   const tracked = new Set(companyKeys.map((c) => c.company_key).filter(Boolean));
   const reach = {
     contacts: contactKeys.length,
@@ -587,7 +561,7 @@ export async function getFunnel() {
       responded: responded.length,
       queued: apps.filter((a) => a.status === "queued").length,
       skipped: apps.filter((a) => a.status === "skipped").length,
-      openJobs: open.length,
+      openJobs: snap.data.open_jobs,
     },
     channel,
     experience,
@@ -628,7 +602,12 @@ export type ContactRow = {
  * Contacts at companies the pipeline tracks, grouped by company and ordered
  * warm-first: the list Harsh works through to mark warm contacts (0024).
  */
-export async function getContacts(): Promise<{ company: string; contacts: ContactRow[] }[]> {
+export const CONTACTS_PAGE = 25;
+
+export async function getContacts(page = 1): Promise<{
+  groups: { company: string; contacts: ContactRow[] }[]; hasMore: boolean;
+  totalCompanies: number; totalContacts: number; totalWarm: number;
+}> {
   const [companies, contacts] = await Promise.all([
     select<{ name: string; company_key: string | null }>(
       "companies", "select=name,company_key&active=is.true&company_key=not.is.null"),
@@ -649,7 +628,16 @@ export async function getContacts(): Promise<{ company: string; contacts: Contac
     if (!groups.has(p.company_norm)) groups.set(p.company_norm, []);
     groups.get(p.company_norm)!.push(p);
   }
-  return [...groups.entries()]
+  const all = [...groups.entries()]
     .map(([key, list]) => ({ company: names.get(key)!, contacts: list }))
     .sort((a, b) => b.contacts.length - a.contacts.length || a.company.localeCompare(b.company));
+  // 25 companies per page (spec 001 FR-007); the totals stay global.
+  const start = (Math.max(1, page) - 1) * CONTACTS_PAGE;
+  return {
+    groups: all.slice(start, start + CONTACTS_PAGE),
+    hasMore: all.length > start + CONTACTS_PAGE,
+    totalCompanies: all.length,
+    totalContacts: all.reduce((n, g) => n + g.contacts.length, 0),
+    totalWarm: all.reduce((n, g) => n + g.contacts.filter((c) => c.warm).length, 0),
+  };
 }

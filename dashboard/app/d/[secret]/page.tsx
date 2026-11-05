@@ -4,17 +4,20 @@ import { effectivePostedAt, formatAge, formatDayAge, hoursSince } from "@/lib/db
 import QueueList from "./QueueList";
 import type { CardJob } from "./JobCard";
 import StatusStrip from "./StatusStrip";
+import Pager, { pageFrom } from "./Pager";
 
 export const dynamic = "force-dynamic";
 
 export default async function QueuePage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ secret: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { secret } = await params;
-  const [rows, meta, status] = await Promise.all([
-    getQueue(), getQueueMeta(), getStatus(),
+  const page = pageFrom(await searchParams);
+  const [{ rows, hasMore }, meta, status] = await Promise.all([
+    getQueue(page), getQueueMeta(), getStatus(),
   ]);
 
   const jobs: CardJob[] = rows.map((row) => {
@@ -114,7 +117,10 @@ export default async function QueuePage({
             : "Queue is clear. Every scored posting has been actioned."}
         </div>
       ) : (
-        <QueueList jobs={jobs} secret={secret} />
+        <>
+          <QueueList jobs={jobs} secret={secret} />
+          <Pager page={page} hasMore={hasMore} href={(n) => `/d/${secret}?p=${n}`} />
+        </>
       )}
     </>
   );
