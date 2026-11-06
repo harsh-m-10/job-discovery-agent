@@ -43,6 +43,7 @@ export default async function HealthPage({ params }: { params: Promise<{ secret:
         <StatusStrip status={status} />
       </section>
 
+      <div className="cols">
       <section className="sec" aria-labelledby="h-numbers">
         <div className="sec-head"><h2 id="h-numbers">Last 24 hours</h2></div>
         <dl className="kv">
@@ -91,6 +92,7 @@ export default async function HealthPage({ params }: { params: Promise<{ secret:
           </Link>
         </div>
       </section>
+      </div>
     </>
   );
 }

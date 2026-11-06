@@ -40,6 +40,7 @@ export default async function PeoplePage({
         </p>
       </section>
 
+      <div className="cols cols-3">
       {groups.map((g) => (
         <section className="sec" key={g.company} aria-label={g.company}>
           <div className="sec-head">
@@ -63,6 +64,7 @@ export default async function PeoplePage({
           </div>
         </section>
       ))}
+      </div>
       <Pager page={page} hasMore={hasMore} href={(n) => `/d/${secret}/people?p=${n}`} />
     </>
   );

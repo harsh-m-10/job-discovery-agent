@@ -1,4 +1,4 @@
-/* Spec 002: phone-first screens (TODAY, JOBS, PIPELINE, PEOPLE, HEALTH).
+/* Spec 002: phone-first screens, widening on laptops (media queries at the end) (TODAY, JOBS, PIPELINE, PEOPLE, HEALTH).
    Colours come from the tokens in globals.css (light / dark / system). */
 
 .shell { max-width: 640px; margin: 0 auto; padding: 0 16px 64px; }
@@ -165,3 +165,38 @@ a.list-row:hover { text-decoration: none; color: var(--text); background: var(--
   background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; }
 
 .link-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* Wider screens. Phone first above; the wrappers (.today, .cols, .cards)
+   are plain blocks on a phone and become grids from tablet width up. */
+@media (min-width: 768px) {
+  .shell { max-width: 1240px; padding: 0 28px 72px; }
+  .head { padding: 20px 0 12px; }
+  .nav { margin: 0 -28px 24px; padding: 8px 28px; gap: 6px; }
+  .nav a { flex: 0 0 auto; padding: 10px 20px; }
+
+  /* JOBS: cards side by side; the older-postings drawer and pager span the row. */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; align-items: start; }
+  .cards > :not(.card) { grid-column: 1 / -1; }
+  .older-body.cards { padding: 0 14px 14px; }
+}
+
+@media (min-width: 960px) {
+  /* TODAY: in-progress, the week and health on the left; new matches on the right. */
+  .today {
+    display: grid; gap: 0 28px; align-items: start;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas: "progress new" "week new" "health new";
+    grid-template-rows: auto auto 1fr;
+  }
+  .today-progress { grid-area: progress; }
+  .today-new { grid-area: new; }
+  .today-week { grid-area: week; }
+  .today-health { grid-area: health; }
+
+  /* PIPELINE stages, PEOPLE companies, HEALTH panels: two columns. */
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; align-items: start; }
+}
+
+@media (min-width: 1200px) {
+  .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

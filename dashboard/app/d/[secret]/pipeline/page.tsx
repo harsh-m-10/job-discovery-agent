@@ -42,6 +42,7 @@ export default async function PipelinePage({
   logPage("pipeline");
   return (
     <>
+      <div className="cols">
       {data.stages.map((stage) => {
         const rows = expanded === stage.id ? stage.rows : stage.rows.slice(0, SHOW);
         return (
@@ -78,6 +79,7 @@ export default async function PipelinePage({
           </section>
         );
       })}
+      </div>
 
       <section className="sec" aria-labelledby="conv">
         <div className="sec-head">

@@ -42,8 +42,9 @@ export default async function TodayPage({ params }: { params: Promise<{ secret: 
   return (
     <>
       <MarkVisit />
+      <div className="today">
 
-      <section className="sec" aria-labelledby="inprog">
+      <section className="sec today-progress" aria-labelledby="inprog">
         <div className="sec-head">
           <h2 id="inprog">In progress</h2>
           <span className="sec-note">{inProgress.length} live</span>
@@ -55,7 +56,7 @@ export default async function TodayPage({ params }: { params: Promise<{ secret: 
         )}
       </section>
 
-      <section className="sec" aria-labelledby="newforyou">
+      <section className="sec today-new" aria-labelledby="newforyou">
         <div className="sec-head">
           <h2 id="newforyou">New for you</h2>
           <span className="sec-note">{sinceLabel(since, firstVisit)}</span>
@@ -86,7 +87,7 @@ export default async function TodayPage({ params }: { params: Promise<{ secret: 
         )}
       </section>
 
-      <section className="sec" aria-labelledby="week">
+      <section className="sec today-week" aria-labelledby="week">
         <div className="sec-head">
           <h2 id="week">This week</h2>
           <span className="sec-note">last 7 days</span>
@@ -98,7 +99,8 @@ export default async function TodayPage({ params }: { params: Promise<{ secret: 
         </div>
       </section>
 
-      <HealthDot snapshot={snapshot} base={base} />
+      <div className="today-health"><HealthDot snapshot={snapshot} base={base} /></div>
+      </div>
     </>
   );
 }
