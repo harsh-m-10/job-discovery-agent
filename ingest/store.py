@@ -31,7 +31,7 @@ PAGE = 1000
 # pooler), while this file reaches the runner on the next trigger. A run that
 # lands between the two must still record everything the schema *can* hold
 # rather than losing the whole row.
-OPTIONAL_RUN_LOG_COLUMNS = {"boards", "trigger_source", "duration_s"}
+OPTIONAL_RUN_LOG_COLUMNS = {"boards", "trigger_source", "duration_s", "db_read_kb"}
 
 # PostgREST's PGRST204 body names the column it could not find, e.g.
 # "Could not find the 'boards' column of 'run_log' in the schema cache".
@@ -88,6 +88,9 @@ class Store:
             raise RuntimeError(
                 f"supabase {method} {table} -> {resp.status_code}: {resp.text[:400]}"
             )
+        # Database egress is the free tier's binding limit on polling cadence
+        # (specs/003); every run reports what it read.
+        self._bytes_read = getattr(self, "_bytes_read", 0) + len(resp.content or b"")
         return resp
 
     def _select_all(self, table: str, params: str) -> list[dict]:
@@ -114,7 +117,7 @@ class Store:
         return self._select_all(
             "companies",
             "select=id,name,ats,board_token,category,priority,last_ok_at,"
-            "consecutive_failures&active=eq.true&ats=neq.aggregator"
+            "consecutive_failures,board_hash&active=eq.true&ats=neq.aggregator"
             "&order=priority.asc,name.asc",
         )
         # ats=aggregator rows are companies seen only through Indeed or a job
@@ -145,10 +148,26 @@ class Store:
                   f"({type(exc).__name__}: {str(exc)[:160]}); next run retries")
         return filled
 
-    def mark_company_ok(self, company_id: int) -> None:
+    def mark_company_ok(self, company_id: int, board_hash: str | None = None) -> None:
+        body: dict[str, Any] = {"last_ok_at": now_iso(), "consecutive_failures": 0}
+        if board_hash is not None:
+            body["board_hash"] = board_hash      # db/migrations/0030
         self._request("PATCH", "companies", params=f"id=eq.{company_id}",
-                      body={"last_ok_at": now_iso(), "consecutive_failures": 0},
-                      prefer="return=minimal")
+                      body=body, prefer="return=minimal")
+
+    def touch_company_jobs(self, company_id: int) -> None:
+        """last_seen_at = now for every open posting of an unchanged board.
+
+        One write, nothing read: what the diff would have done to these rows
+        (touch_jobs) when the board fingerprint says nothing changed. Keeps the
+        empty-fetch grace window (lifecycle.EMPTY_FETCH_GRACE_HOURS) honest.
+        """
+        self._request("PATCH", "jobs",
+                      params=f"company_id=eq.{company_id}&closed_at=is.null",
+                      body={"last_seen_at": now_iso()}, prefer="return=minimal")
+
+    def bytes_read(self) -> int:
+        return self._bytes_read
 
     def mark_company_failure(self, company_id: int, failures: int,
                              max_failures: int) -> bool:
@@ -252,7 +271,8 @@ class Store:
                    jobs_closed: int, errors: list[dict],
                    boards: list[dict] | None = None,
                    trigger_source: str | None = None,
-                   duration_s: float | None = None) -> None:
+                   duration_s: float | None = None,
+                   db_read_kb: int | None = None) -> None:
         """Close out the run_log row.
 
         `boards` comes from db/migrations/0004; `trigger_source` and
@@ -262,7 +282,7 @@ class Store:
         """
         if run_id is None:
             return
-        self._patch_run_log(run_id, {
+        body = {
             "finished_at": now_iso(),
             "jobs_seen": jobs_seen,
             "jobs_new": jobs_new,
@@ -271,7 +291,10 @@ class Store:
             "boards": boards or None,
             "trigger_source": trigger_source,
             "duration_s": duration_s,
-        })
+        }
+        if db_read_kb is not None:
+            body["db_read_kb"] = db_read_kb    # db/migrations/0030
+        self._patch_run_log(run_id, body)
 
     def _patch_run_log(self, run_id: int, body: dict) -> None:
         """PATCH run_log, dropping whichever columns the schema lacks.

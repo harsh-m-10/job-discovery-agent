@@ -37,6 +37,7 @@ from dotenv import load_dotenv
 
 from .adapters import get_adapter
 from .lifecycle import plan
+from .normalize import content_hash
 from .models import BoardFetchError, RawJob
 from .normalize import is_india_relevant
 from .store import MissingCredentials, Store
@@ -86,6 +87,17 @@ def load_settings() -> dict:
     from common.settings import load_settings as _load
     return _load(SETTINGS)
 
+
+def board_fingerprint(jobs) -> str:
+    """Stable digest of a board's India-relevant postings and their content.
+
+    Equal to the stored companies.board_hash exactly when a diff would change
+    nothing: same ids, same title/location/description (db/migrations/0030).
+    """
+    import hashlib
+    parts = sorted(f"{j.ats_job_id}:{content_hash(j.title, j.location, j.description)}"
+                   for j in jobs)
+    return hashlib.sha1("\n".join(parts).encode("utf-8")).hexdigest()
 
 def is_due(company: dict, force: bool,
            cadence: dict[int, int] | None = None) -> bool:
@@ -207,6 +219,7 @@ def main() -> int:
           f"{' (dry run)' if args.dry_run else ''}\n")
 
     totals = {"seen": 0, "new": 0, "changed": 0, "reopened": 0, "closed": 0}
+    unchanged = 0   # boards skipped by fingerprint (specs/003)
     errors: list[dict] = []
     deactivated: list[str] = []
     # Per-board outcome for every board polled this run. run_log.errors only
@@ -257,13 +270,36 @@ def main() -> int:
                 print(f"  ok   {name:<18} {len(jobs):>3} India-relevant postings")
                 continue
 
+            # Unchanged board: same postings, same content as the last
+            # successful diff. Skip reading its stored rows (database egress is
+            # what limits polling cadence, specs/003) and just mark it seen.
+            # Empty fetches always take the full path: the empty-fetch guard
+            # lives in plan().
+            fp = board_fingerprint(jobs)
+            if jobs and fp == company.get("board_hash"):
+                try:
+                    store.touch_company_jobs(company["id"])
+                    store.mark_company_ok(company["id"])
+                except Exception as exc:
+                    errors.append({"company": name, "error": f"persist: {exc}"})
+                    print(f"  FAIL {name}: persist: {exc}")
+                    continue
+                unchanged += 1
+                boards.append({"company": name, "ats": company["ats"],
+                               "token": company["board_token"], "seen": len(jobs),
+                               "unchanged": True})
+                continue
+
             try:
                 existing = store.existing_jobs(company["id"])
                 p = plan(company["id"], jobs, existing)
                 store.upsert_jobs(p.upserts)
                 store.touch_jobs(p.touch_ids)
                 store.close_jobs(p.close_ids)
-                store.mark_company_ok(company["id"])
+                # The fingerprint is saved only after the diff fully applied,
+                # so a failed persist is retried in full next run.
+                store.mark_company_ok(company["id"],
+                                      board_hash=None if p.suppressed_closes else fp)
             except Exception as exc:
                 errors.append({"company": name, "error": f"persist: {exc}"})
                 print(f"  FAIL {name}: persist: {exc}")
@@ -306,6 +342,9 @@ def main() -> int:
     print(f"seen {totals['seen']}  new {totals['new']}  edited {totals['changed']}"
           f"  reopened {totals['reopened']}  closed {totals['closed']}"
           f"  errors {len(errors)}  in {elapsed:.1f}s")
+    if store:
+        print(f"boards unchanged (diff skipped): {unchanged}  database read: "
+              f"{store.bytes_read() / 1024:.0f} KB")
     if deactivated:
         print(f"deactivated after {max_failures} consecutive failures: "
               f"{', '.join(deactivated)}")
@@ -314,7 +353,8 @@ def main() -> int:
         store.finish_run(run_id, jobs_seen=totals["seen"], jobs_new=totals["new"],
                          jobs_closed=totals["closed"], errors=errors,
                          boards=boards, trigger_source=args.source,
-                         duration_s=round(elapsed, 3))
+                         duration_s=round(elapsed, 3),
+                         db_read_kb=round(store.bytes_read() / 1024))
 
     # A run that failed on some boards is still a successful run — exit non-zero
     # only if nothing at all got through, which means something systemic.

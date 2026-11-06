@@ -95,6 +95,9 @@ class Plan:
     skipped_ats: int = 0
     skipped_other: int = 0
     n_new: int = 0
+    # Rows whose stored description is longer and must be carried into an
+    # upsert: their text is fetched by id and plan() runs again (apply()).
+    need_desc: list[int] = field(default_factory=list)
 
 
 def plan(items: list[Item], company_ids: dict[str, int], existing: dict[str, dict],
@@ -123,11 +126,17 @@ def plan(items: list[Item], company_ids: dict[str, int], existing: dict[str, dic
             out.skipped_other += 1          # removed by retention (0026): never again
             continue
         desc = clean_text(item.description)
-        if prior and len(prior.get("description") or "") >= len(desc) \
-                and prior.get("closed_at") is None:
+        # Stored length from job_keys.desc_len (migration 0031); the text itself
+        # is not downloaded just to be compared (it was ~MBs per Indeed run).
+        prior_len = int(prior.get("desc_len") if prior and prior.get("desc_len") is not None
+                        else len((prior or {}).get("description") or ""))
+        if prior and prior_len >= len(desc) and prior.get("closed_at") is None:
             out.touch_ids.append(prior["id"])
             continue
-        if prior and len(prior.get("description") or "") > len(desc):
+        if prior and prior_len > len(desc):
+            if prior.get("description") is None:
+                out.need_desc.append(prior["id"])
+                continue
             desc = prior["description"]
         job = RawJob(ats_job_id=jid, title=item.title.strip(), location=item.location.strip(),
                      description=desc, absolute_url=item.url, posted_at=item.posted_at,
@@ -218,7 +227,7 @@ def existing_for(store, company_ids: list[int]) -> dict[str, dict]:
     for i in range(0, len(company_ids), 150):
         chunk = ",".join(str(c) for c in company_ids[i:i + 150])
         for r in store._select_all(
-                "job_keys", "select=id,ats_job_id,closed_at,reopen_count,description,source,"
+                "job_keys", "select=id,ats_job_id,closed_at,reopen_count,desc_len,source,"
                 f"seen_only&company_id=in.({chunk})"):
             out[r["ats_job_id"]] = r
     return out
@@ -251,8 +260,21 @@ def apply(store, items: list[Item], dry_run: bool) -> Plan:
         print(f"  dry run: {len(p.upserts)} posting(s) would be written")
         return p
     ids = ensure_companies(store, items)
-    p = plan(items, ids, existing_for(store, sorted(set(ids.values()))),
-             ats_open_keys(store, set(ids)))
+    existing = existing_for(store, sorted(set(ids.values())))
+    ats_open = ats_open_keys(store, set(ids))
+    p = plan(items, ids, existing, ats_open)
+    if p.need_desc:
+        # Rare: a closed posting coming back with a shorter description than
+        # the one stored. Fetch just those texts and plan again.
+        texts = {}
+        for i in range(0, len(p.need_desc), 100):
+            part = ",".join(str(j) for j in p.need_desc[i:i + 100])
+            texts.update({r["id"]: r.get("description") or "" for r in store._select_all(
+                "jobs", f"select=id,description&id=in.({part})")})
+        for row in existing.values():
+            if row.get("id") in texts:
+                row["description"] = texts[row["id"]]
+        p = plan(items, ids, existing, ats_open)
     store.upsert_jobs(p.upserts)
     store.touch_jobs(p.touch_ids)
     return p

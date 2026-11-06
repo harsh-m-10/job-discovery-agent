@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # LLM output routinely contains en-dashes and non-breaking hyphens. The Windows
@@ -235,28 +235,26 @@ def pending_jobs(threshold: float, max_age_days: float | None = None) -> list[di
     scorer would drop jobs in the window between being scored and being sent.
     """
     headers = db_headers()
+    # Only candidates that can still be pinged cross the wire: unpinged, open
+    # and first seen inside the age ceiling, filtered in the database through
+    # the jobs embed (2026-11-06). This read every above-threshold score with
+    # its reasoning, then every candidate job, each run: ~0.4 MB a run, which
+    # with the contacts below was ~1.2 GB a month of the free tier's 5 GB.
+    since = ""
+    if max_age_days:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=float(max_age_days))
+        since = f"&jobs.first_seen_at=gte.{cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')}"
     scores = get_all(
         f"job_scores?select=job_id,fit_score,min_years,max_years,"
-        f"matched_skills,gap_skills,reasoning,provisional&fit_score=gte.{threshold}"
-        f"&location_ok=is.true",
+        f"matched_skills,gap_skills,reasoning,provisional,"
+        f"jobs!inner(id,title,location,absolute_url,compensation,posted_at,"
+        f"posted_at_precision,role_family,first_seen_at,source,companies(name))"
+        f"&fit_score=gte.{threshold}&location_ok=is.true"
+        f"&jobs.closed_at=is.null&jobs.pinged_at=is.null{since}",
         headers)
     if not scores:
         return []
-
-    # Never ping twice: jobs.pinged_at (migration 0026) is the record. It used
-    # to be every `notifications` row, read in full each run; notifications
-    # are now a 30-day delivery log and pinged_at also survives in seen_jobs
-    # after retention removes the posting.
-    job_by_id: dict[int, dict] = {}
-    all_ids = [s["job_id"] for s in scores]
-    for i in range(0, len(all_ids), 150):
-        ids = ",".join(str(j) for j in all_ids[i:i + 150])
-        for j in get_all(
-                f"jobs?select=id,title,location,absolute_url,compensation,"
-                f"posted_at,posted_at_precision,role_family,first_seen_at,source,companies(name)"
-                f"&closed_at=is.null&pinged_at=is.null&id=in.({ids})",
-                headers):
-            job_by_id[j["id"]] = j
+    job_by_id: dict[int, dict] = {s["job_id"]: s.pop("jobs") for s in scores}
     wanted = [s for s in scores if s["job_id"] in job_by_id]
     if not wanted:
         return []

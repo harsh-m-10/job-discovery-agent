@@ -65,9 +65,22 @@ class ScoreStore:
         """
         if not only_unscored:
             return self._get("jobs", self.JOB_FIELDS + "&closed_at=is.null&order=posted_at.desc")
-        open_ids = {r["id"] for r in self._get("jobs", "select=id&closed_at=is.null")}
-        scored = {r["job_id"] for r in self._get("job_scores", "select=job_id")}
-        return self.jobs_by_id(sorted(open_ids - scored))
+        # 2026-11-06: an anti-join in PostgREST, so only the unscored ids
+        # cross the wire. It read every open id and every scored id (~220 KB)
+        # each run to subtract them here.
+        unscored = [r["id"] for r in self._get(
+            "jobs", "select=id,job_scores(job_id)&job_scores=is.null&closed_at=is.null")]
+        return self.jobs_by_id(unscored)
+
+    def failed_job_ids(self) -> set[int]:
+        """Jobs whose last scoring attempt failed on every provider.
+
+        Its own small query since 2026-11-06. The normal run used to call
+        scores() -- all 11,500 rows with their reasoning, 3.2 MB -- every 15
+        minutes just to find these: ~8.7 GB a month of database egress, which
+        pushed the free tier over its quota."""
+        return {r["job_id"] for r in self._get(
+            "job_scores", "select=job_id&reject_reason=like.scoring_failed*")}
 
     def jobs_by_id(self, ids, chunk: int = 150, open_only: bool = True) -> list[dict]:
         """Full rows for these ids (open ones only by default), newest first."""

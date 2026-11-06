@@ -148,6 +148,8 @@ def main() -> int:
     ap.add_argument("--prefilter-only", action="store_true", help="no LLM calls")
     ap.add_argument("--report", action="store_true", help="print stored scores and exit")
     ap.add_argument("--rescore", action="store_true", help="ignore existing scores")
+    ap.add_argument("--sync-location", action="store_true",
+                    help="re-apply the city rule to every scored open job (otherwise once a day)")
     ap.add_argument("--retry-failed", action="store_true",
                     help="re-score jobs whose previous scoring attempt errored")
     ap.add_argument("--provider", help="use only this provider (e.g. google)")
@@ -186,9 +188,13 @@ def main() -> int:
     if max_age:
         print(f"age gate: skipping postings older than {max_age:g} days")
     store = ScoreStore()
-    if not args.report:
-        # Before scoring, so a run that has nothing new still re-applies the
-        # city rule to everything already scored (db/migrations/0019).
+    # The city rule is applied to every new score as it is written; this pass
+    # only matters when the rule itself changes. Once a day (the run that
+    # starts in the 03:00 UTC quarter-hour) or on demand, not every run: it
+    # read every scored open job each time (~120 KB, ~0.35 GB a month).
+    now_utc = datetime.now(timezone.utc)
+    sync_due = args.sync_location or (now_utc.hour == 3 and now_utc.minute < 15)
+    if not args.report and sync_due:
         try:
             flipped = store.sync_location_flags(in_preferred_location)
             if flipped:
@@ -367,8 +373,7 @@ def _main(args, store, max_years, penalties, max_age) -> int:
     # failed ones are taken (a provisional score redone by rules is the same).
     if not args.retry_failed and not args.rescore:
         provisional = store.provisional_job_ids()
-        failed = {s["job_id"] for s in store.scores()
-                  if (s.get("reject_reason") or "").startswith("scoring_failed")}
+        failed = store.failed_job_ids()
         again = failed if rules_only else (provisional | failed)
         have = {j["id"] for j in survivors}
         if again - have:

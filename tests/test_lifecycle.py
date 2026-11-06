@@ -328,6 +328,18 @@ def test_a_posting_removed_by_retention_is_neither_stored_nor_closed():
     assert p.close_ids == []
 
 
+def test_the_board_fingerprint_changes_exactly_when_a_diff_would():
+    # specs/003: an unchanged board skips the database read; anything a diff
+    # would act on (a new id, an edit, a removal) must change the fingerprint.
+    from ingest.run import board_fingerprint
+    a, b = job("1"), job("2")
+    fp = board_fingerprint([a, b])
+    assert fp == board_fingerprint([b, a]), "order must not matter"
+    assert fp != board_fingerprint([a]), "a removed posting"
+    assert fp != board_fingerprint([a, b, job("3")]), "a new posting"
+    assert fp != board_fingerprint([a, job("2", description="Edited.")]), "an edit"
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):

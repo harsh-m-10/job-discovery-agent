@@ -85,6 +85,22 @@ def test_a_posting_removed_by_retention_is_skipped():
     assert p.upserts == [] and p.n_new == 0 and p.skipped_other == 1
 
 
+def test_stored_length_decides_without_downloading_the_text():
+    # job_keys.desc_len (0031): an open posting with a longer stored text is
+    # only touched; a closed one coming back asks for its stored text by id.
+    key = agg_id(identity(item(desc="short")))
+    open_row = {key: {"id": 5, "closed_at": None, "reopen_count": 0, "desc_len": 500,
+                      "description": None, "source": "indeed"}}
+    p = plan([item(desc="short")], IDS, open_row, set())
+    assert p.touch_ids == [5] and p.upserts == [] and p.need_desc == []
+    closed_row = {key: {**open_row[key], "closed_at": "2026-10-01T00:00:00Z"}}
+    p = plan([item(desc="short")], IDS, closed_row, set())
+    assert p.need_desc == [5] and p.upserts == []
+    closed_row[key]["description"] = "x" * 500
+    p = plan([item(desc="short")], IDS, closed_row, set())
+    assert len(p.upserts) == 1 and p.upserts[0]["description"] == "x" * 500
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in sorted(globals().items()):
