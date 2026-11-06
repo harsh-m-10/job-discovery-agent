@@ -194,9 +194,11 @@ a.list-row:hover { text-decoration: none; color: var(--text); background: var(--
   .today-health { grid-area: health; }
 
   /* PIPELINE stages, PEOPLE companies, HEALTH panels: two columns. */
-  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; align-items: start; }
+  /* Columns, not a grid: a long stage (Applied) does not leave a hole beside it. */
+  .cols { columns: 2; column-gap: 24px; }
+  .cols > * { break-inside: avoid; }
 }
 
 @media (min-width: 1200px) {
-  .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cols-3 { columns: 3; }
 }
