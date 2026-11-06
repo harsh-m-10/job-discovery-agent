@@ -55,6 +55,7 @@ jobs:
         id: cfg
         env:
           DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           missing=""
           [ -n "$SUPABASE_DB_PASSWORD" ] || missing="$missing SUPABASE_DB_PASSWORD(secret)"
@@ -63,6 +64,21 @@ jobs:
             || missing="$missing config/backup_recipient.txt(age public key)"
           if [ -n "$missing" ]; then
             echo "::warning::backup not configured, nothing backed up. Missing:$missing"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Once a night. The Worker dispatches at 20:41 UTC and GitHub's own
+          # schedule fires hours late as the backstop; until 2026-11-06 both
+          # ran, dumping the whole database (~45 MB of egress) twice a night.
+          # A successful backup in the last 16 h (log_worker row) means skip:
+          # the backstop lands 4-6 h after the 20:41 run; the next 20:41 is 24 h on.
+          since=$(date -u -d '16 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          recent=$(curl -fsS -m 20 \
+            -H "apikey: $SUPABASE_SERVICE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            "$SUPABASE_URL/rest/v1/run_log?select=id&worker=eq.backup&errors=eq.%5B%5D&started_at=gte.$since&limit=1" \
+            || echo "[]")
+          if [ "$recent" != "[]" ] && [ -n "$recent" ]; then
+            echo "::notice::a backup already succeeded in the last 16 h; skipping"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
