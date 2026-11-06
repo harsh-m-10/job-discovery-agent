@@ -5,25 +5,22 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { setStatus } from "@/lib/statusClient";
 import type { JobItem } from "@/lib/screens";
-import { CITY_LABEL } from "@/lib/settings.generated";
-
-const SKIP_REASONS = ["Too senior", "Wrong role", `Not ${CITY_LABEL}`, "Company", "Already applied"];
 
 /**
  * A JOBS card (spec 002 FR-007): Apply opens the posting and then asks whether
- * you applied (nothing is submitted for you); Skip records a reason; Ask
+ * you applied (nothing is submitted for you); Skip is one tap; Ask
  * referral goes to the job's contact list.
  */
 export default function JobItemCard({ job, secret, base }: { job: JobItem; secret: string; base: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [mode, setMode] = useState<"idle" | "confirm" | "skip" | "done">("idle");
+  const [mode, setMode] = useState<"idle" | "confirm" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
 
-  async function mark(status: string, extra: { skip_reason?: string } = {}) {
+  async function mark(status: string) {
     setError(null);
     try {
-      await setStatus(secret, job.job_id, status, undefined, extra);
+      await setStatus(secret, job.job_id, status);
       setMode("done");
       start(() => router.refresh());
     } catch (e) {
@@ -78,23 +75,11 @@ export default function JobItemCard({ job, secret, base }: { job: JobItem; secre
         <div className="row-actions">
           <a className="b b-primary" href={job.absolute_url} target="_blank" rel="noreferrer"
              onClick={() => setMode("confirm")}>Apply</a>
-          <button type="button" className="b" aria-expanded={mode === "skip"}
-                  onClick={() => setMode(mode === "skip" ? "idle" : "skip")}>Skip</button>
+          <button type="button" className="b" disabled={pending} onClick={() => mark("skipped")}>Skip</button>
           <Link className="b" style={{ flex: 1.3 }} href={`${base}/j/${job.job_id}#referrals`}>Ask referral</Link>
         </div>
       )}
 
-      {mode === "skip" && (
-        <div className="sheet">
-          <span className="card-label">Why skip?</span>
-          <div className="chip-row">
-            {SKIP_REASONS.map((r) => (
-              <button key={r} type="button" className="chip" disabled={pending}
-                      onClick={() => mark("skipped", { skip_reason: r })}>{r}</button>
-            ))}
-          </div>
-        </div>
-      )}
       {error && <div className="err" role="alert">{error}</div>}
     </article>
   );
