@@ -254,6 +254,100 @@ llm_providers:
     enabled: true
     timeout: 120
 
+  # --- added 2026-11-15: three more free providers, at the end of the chain.
+  # Measured on the real scoring prompt with five live Stripe postings, twice,
+  # beside Gemini (6.5 / 2.5 / 3.5 / 4.0 / 6.0 on the same five):
+  #   cohere command-a-03-2025         5/5 in 8-10s   5.0 / 3.5 / 4.0 / 4.5 / 6.0
+  #   kilo   particle-ai/particle-1    5/5 in 9-13s   5.5 / 2.0 / 2.5 / 2.5 / 6.0
+  #   llm7   gpt-oss:20b               5/5 in 2-23s   5.0 / 2.0 / 2.0 / 2.0 / 4.0
+  # Rejected in the same test: kilo-auto/free and the nemotron and ernie :free
+  # models on Kilo (empty replies), Kilo's ling-3.2-flash:free (daily limit
+  # already reached), command-a-plus (thinks aloud, no JSON), and every other
+  # LLM7 model (402 "insufficient balance": only gpt-oss:20b is free on that key).
+
+  # Cohere's free trial key allows about 1,000 calls a month and 20 a minute, so
+  # it sits late in the chain: a fallback, not a workhorse.
+  - name: cohere
+    priority: 9
+    model: command-a-03-2025
+    base_url: https://api.cohere.ai/compatibility/v1
+    api_key_env: COHERE_API_KEY
+    rpm: 10
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  # Kilo's gateway is OpenRouter-compatible; the ":free" models carry a daily
+  # request cap per model.
+  - name: kilo
+    priority: 10
+    model: particle-ai/particle-1:free
+    base_url: https://api.kilo.ai/api/gateway
+    api_key_env: KILO_API_KEY
+    rpm: 10
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  # Reasoning model: with the real profile, 500 output tokens per job ran out
+  # while it was still thinking (empty replies, 2 of 2); 1,000 and 1,500 scored
+  # the healthcheck fixture 2 of 2 each. Batch 3 keeps 3 x 1,200 + 200 under
+  # the 4,096 ceiling.
+  - name: llm7
+    priority: 11
+    model: gpt-oss:20b
+    base_url: https://api.llm7.io/v1
+    api_key_env: LLM7_API_KEY
+    rpm: 10
+    tpm: 0
+    batch_size: 3
+    max_chars: 4000
+    max_output_tokens_per_job: 1200
+    json_mode: true
+    enabled: true
+    timeout: 120
+
+  # Keys present, accounts not usable yet; flip `enabled` once fixed.
+  # ModelScope answers 401 "Please bind your Alibaba Cloud account before use"
+  # (modelscope.ai -> Settings -> Account). Its model list works without that.
+  - name: modelscope
+    priority: 12
+    model: Qwen/Qwen3.5-35B-A3B
+    base_url: https://api-inference.modelscope.ai/v1
+    api_key_env: MODELSCOPE_API_KEY
+    rpm: 10
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: false
+    timeout: 120
+
+  # Zhipu answers 1113 "insufficient balance or no resource package" on every
+  # model, glm-5.3-flash included, on both open.bigmodel.cn and api.z.ai.
+  - name: zhipu
+    priority: 13
+    model: glm-5.3-flash
+    base_url: https://api.z.ai/api/paas/v4
+    api_key_env: ZHIPU_API_KEY
+    rpm: 10
+    tpm: 0
+    batch_size: 5
+    max_chars: 4000
+    max_output_tokens_per_job: 500
+    json_mode: true
+    enabled: false
+    timeout: 120
+
 # Fallbacks used when a provider entry omits them, and by --batch-size/--char-limit
 llm_batch_size: 4
 description_char_limit: 2600
